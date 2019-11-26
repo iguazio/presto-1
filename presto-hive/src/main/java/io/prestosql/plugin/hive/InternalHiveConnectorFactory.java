@@ -41,6 +41,7 @@ import io.prestosql.plugin.hive.rubix.RubixModule;
 import io.prestosql.plugin.hive.s3.HiveS3Module;
 import io.prestosql.plugin.hive.security.HiveSecurityModule;
 import io.prestosql.plugin.hive.security.SystemTableAwareAccessControl;
+import io.prestosql.plugin.hive.v3io.HiveV3IOModule;
 import io.prestosql.spi.NodeManager;
 import io.prestosql.spi.PageIndexerFactory;
 import io.prestosql.spi.PageSorter;
@@ -88,6 +89,7 @@ public final class InternalHiveConnectorFactory
                     new HiveModule(),
                     new HiveS3Module(),
                     new HiveGcsModule(),
+                    new HiveV3IOModule(),
                     new HiveAzureModule(),
                     installModuleIf(RubixEnabledConfig.class, RubixEnabledConfig::isCacheEnabled, new RubixModule()),
                     new HiveMetastoreModule(metastore),
