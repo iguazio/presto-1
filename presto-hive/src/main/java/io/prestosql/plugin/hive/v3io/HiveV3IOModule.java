@@ -20,12 +20,12 @@ import io.prestosql.plugin.hive.DynamicConfigurationProvider;
 
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 
-public class HiveV3ioModule
+public class HiveV3IOModule
         extends AbstractConfigurationAwareModule
 {
     @Override
     protected void setup(Binder binder)
     {
-        newSetBinder(binder, DynamicConfigurationProvider.class).addBinding().to(V3ioConfigurationProvider.class).in(Scopes.SINGLETON);
+        newSetBinder(binder, DynamicConfigurationProvider.class).addBinding().to(V3IOConfigurationProvider.class).in(Scopes.SINGLETON);
     }
 }

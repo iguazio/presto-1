@@ -36,7 +36,7 @@ import java.util.Optional;
 import static io.prestosql.plugin.hive.DynamicConfigurationProvider.setCacheKey;
 import static io.prestosql.plugin.hive.HdfsEnvironment.HdfsContext;
 
-public class V3ioConfigurationProvider
+public class V3IOConfigurationProvider
         implements DynamicConfigurationProvider
 {
     private static final String V3IO_SCHEMA = "v3io";
