@@ -35,7 +35,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.sql.SQLException;
 import java.util.Map;
 
 import static io.prestosql.tempto.assertions.QueryAssert.Row.row;
@@ -53,14 +52,14 @@ public class TestKafkaAvroSmokeTest
 
     private static final String ALL_DATATYPES_AVRO_TABLE_NAME = "product_tests.all_datatypes_avro";
     private static final String ALL_DATATYPES_AVRO_TOPIC_NAME = "all_datatypes_avro";
-    private static final String ALL_DATATYPE_SCHEMA_PATH = "/docker/volumes/conf/presto/etc/catalog/kafka/all_datatypes_avro_schema.avsc";
+    private static final String ALL_DATATYPE_SCHEMA_PATH = "/docker/presto-product-tests/conf/presto/etc/catalog/kafka/all_datatypes_avro_schema.avsc";
 
     private static final String ALL_NULL_AVRO_TABLE_NAME = "product_tests.all_null_avro";
     private static final String ALL_NULL_AVRO_TOPIC_NAME = "all_null_avro";
 
     private static final String STRUCTURAL_AVRO_TABLE_NAME = "product_tests.structural_datatype_avro";
     private static final String STRUCTURAL_AVRO_TOPIC_NAME = "structural_datatype_avro";
-    private static final String STRUCTURAL_SCHEMA_PATH = "/docker/volumes/conf/presto/etc/catalog/kafka/structural_datatype_avro_schema.avsc";
+    private static final String STRUCTURAL_SCHEMA_PATH = "/docker/presto-product-tests/conf/presto/etc/catalog/kafka/structural_datatype_avro_schema.avsc";
 
     // kafka-connectors requires tables to be predefined in presto configuration
     // the requirements here will be used to verify that table actually exists and to
@@ -120,7 +119,6 @@ public class TestKafkaAvroSmokeTest
     @Test(groups = KAFKA)
     @Requires(AllDataTypesAvroTable.class)
     public void testSelectPrimitiveDataType()
-            throws SQLException
     {
         QueryResult queryResult = query(format("select * from %s.%s", KAFKA_CATALOG, ALL_DATATYPES_AVRO_TABLE_NAME));
         assertThat(queryResult).containsOnly(row(
@@ -143,7 +141,6 @@ public class TestKafkaAvroSmokeTest
     @Test(groups = KAFKA)
     @Requires(NullDataAvroTable.class)
     public void testNullType()
-            throws SQLException
     {
         QueryResult queryResult = query(format("select * from %s.%s", KAFKA_CATALOG, ALL_NULL_AVRO_TABLE_NAME));
         assertThat(queryResult).containsOnly(row(
@@ -169,7 +166,6 @@ public class TestKafkaAvroSmokeTest
     @Test(groups = KAFKA)
     @Requires(StructuralDataTypeTable.class)
     public void testSelectStructuralDataType()
-            throws SQLException
     {
         QueryResult queryResult = query(format("SELECT a[1], a[2], m['key1'] FROM (SELECT c_array as a, c_map as m FROM %s.%s) t", KAFKA_CATALOG, STRUCTURAL_AVRO_TABLE_NAME));
         assertThat(queryResult).containsOnly(row(100, 102, "value1"));

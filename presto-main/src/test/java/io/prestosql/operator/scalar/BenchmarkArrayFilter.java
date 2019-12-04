@@ -16,7 +16,7 @@ package io.prestosql.operator.scalar;
 import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableList;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionListBuilder;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
@@ -64,6 +64,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static io.prestosql.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.MetadataManager.createTestMetadataManager;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.BenchmarkArrayFilter.ExactArrayFilterFunction.EXACT_ARRAY_FILTER_FUNCTION;
@@ -207,7 +208,6 @@ public class BenchmarkArrayFilter
             super(new FunctionMetadata(
                     new Signature(
                             "exact_filter",
-                            FunctionKind.SCALAR,
                             ImmutableList.of(typeVariable("T")),
                             ImmutableList.of(),
                             arrayType(new TypeSignature("T")),
@@ -216,8 +216,13 @@ public class BenchmarkArrayFilter
                                     functionType(new TypeSignature("T"), BOOLEAN.getTypeSignature())),
                             false),
                     false,
+                    ImmutableList.of(
+                            new FunctionArgumentDefinition(false),
+                            new FunctionArgumentDefinition(false)),
                     false,
-                    "return array containing elements that match the given predicate"));
+                    false,
+                    "return array containing elements that match the given predicate",
+                    SCALAR));
         }
 
         @Override

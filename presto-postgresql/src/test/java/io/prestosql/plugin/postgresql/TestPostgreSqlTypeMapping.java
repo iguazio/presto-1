@@ -13,20 +13,22 @@
  */
 package io.prestosql.plugin.postgresql;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.prestosql.Session;
 import io.prestosql.spi.type.ArrayType;
 import io.prestosql.spi.type.TimeZoneKey;
+import io.prestosql.testing.AbstractTestQueryFramework;
 import io.prestosql.testing.TestingSession;
-import io.prestosql.tests.AbstractTestQueryFramework;
-import io.prestosql.tests.datatype.CreateAndInsertDataSetup;
-import io.prestosql.tests.datatype.CreateAsSelectDataSetup;
-import io.prestosql.tests.datatype.DataSetup;
-import io.prestosql.tests.datatype.DataType;
-import io.prestosql.tests.datatype.DataTypeTest;
-import io.prestosql.tests.sql.JdbcSqlExecutor;
-import io.prestosql.tests.sql.PrestoSqlExecutor;
+import io.prestosql.testing.datatype.CreateAndInsertDataSetup;
+import io.prestosql.testing.datatype.CreateAndPrestoInsertDataSetup;
+import io.prestosql.testing.datatype.CreateAsSelectDataSetup;
+import io.prestosql.testing.datatype.DataSetup;
+import io.prestosql.testing.datatype.DataType;
+import io.prestosql.testing.datatype.DataTypeTest;
+import io.prestosql.testing.sql.JdbcSqlExecutor;
+import io.prestosql.testing.sql.PrestoSqlExecutor;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -47,6 +49,7 @@ import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.io.BaseEncoding.base16;
 import static io.prestosql.plugin.postgresql.PostgreSqlConfig.ArrayMapping.AS_ARRAY;
 import static io.prestosql.plugin.postgresql.PostgreSqlConfig.ArrayMapping.AS_JSON;
@@ -57,20 +60,20 @@ import static io.prestosql.spi.type.TimestampWithTimeZoneType.TIMESTAMP_WITH_TIM
 import static io.prestosql.spi.type.TypeSignature.mapType;
 import static io.prestosql.spi.type.VarbinaryType.VARBINARY;
 import static io.prestosql.spi.type.VarcharType.VARCHAR;
-import static io.prestosql.tests.datatype.DataType.bigintDataType;
-import static io.prestosql.tests.datatype.DataType.booleanDataType;
-import static io.prestosql.tests.datatype.DataType.dataType;
-import static io.prestosql.tests.datatype.DataType.dateDataType;
-import static io.prestosql.tests.datatype.DataType.decimalDataType;
-import static io.prestosql.tests.datatype.DataType.doubleDataType;
-import static io.prestosql.tests.datatype.DataType.formatStringLiteral;
-import static io.prestosql.tests.datatype.DataType.integerDataType;
-import static io.prestosql.tests.datatype.DataType.jsonDataType;
-import static io.prestosql.tests.datatype.DataType.realDataType;
-import static io.prestosql.tests.datatype.DataType.smallintDataType;
-import static io.prestosql.tests.datatype.DataType.timestampDataType;
-import static io.prestosql.tests.datatype.DataType.varbinaryDataType;
-import static io.prestosql.tests.datatype.DataType.varcharDataType;
+import static io.prestosql.testing.datatype.DataType.bigintDataType;
+import static io.prestosql.testing.datatype.DataType.booleanDataType;
+import static io.prestosql.testing.datatype.DataType.dataType;
+import static io.prestosql.testing.datatype.DataType.dateDataType;
+import static io.prestosql.testing.datatype.DataType.decimalDataType;
+import static io.prestosql.testing.datatype.DataType.doubleDataType;
+import static io.prestosql.testing.datatype.DataType.formatStringLiteral;
+import static io.prestosql.testing.datatype.DataType.integerDataType;
+import static io.prestosql.testing.datatype.DataType.jsonDataType;
+import static io.prestosql.testing.datatype.DataType.realDataType;
+import static io.prestosql.testing.datatype.DataType.smallintDataType;
+import static io.prestosql.testing.datatype.DataType.timestampDataType;
+import static io.prestosql.testing.datatype.DataType.varbinaryDataType;
+import static io.prestosql.testing.datatype.DataType.varcharDataType;
 import static io.prestosql.type.JsonType.JSON;
 import static io.prestosql.type.UuidType.UUID;
 import static java.lang.String.format;
@@ -818,14 +821,22 @@ public class TestPostgreSqlTypeMapping
     @Test
     public void testHstore()
     {
-        DataTypeTest.create()
-                .addRoundTrip(hstoreDataType(), null)
-                .addRoundTrip(hstoreDataType(), ImmutableMap.of())
-                .addRoundTrip(hstoreDataType(), ImmutableMap.of("key1", "value1"))
-                .addRoundTrip(hstoreDataType(), ImmutableMap.of("key1", "value1", "key2", "value2", "key3", "value3"))
-                .addRoundTrip(hstoreDataType(), ImmutableMap.of("key1", " \" ", "key2", " ' ", "key3", " ]) "))
-                .addRoundTrip(hstoreDataType(), Collections.singletonMap("key1", null))
+        hstoreTestCases(hstoreDataType())
                 .execute(getQueryRunner(), postgresCreateAndInsert("tpch.postgresql_test_hstore"));
+
+        hstoreTestCases(varcharMapDataType())
+                .execute(getQueryRunner(), postgresCreatePrestoInsert("tpch.postgresql_test_hstore"));
+    }
+
+    private DataTypeTest hstoreTestCases(DataType<Map<String, String>> varcharMapDataType)
+    {
+        return DataTypeTest.create()
+                .addRoundTrip(varcharMapDataType, null)
+                .addRoundTrip(varcharMapDataType, ImmutableMap.of())
+                .addRoundTrip(varcharMapDataType, ImmutableMap.of("key1", "value1"))
+                .addRoundTrip(varcharMapDataType, ImmutableMap.of("key1", "value1", "key2", "value2", "key3", "value3"))
+                .addRoundTrip(varcharMapDataType, ImmutableMap.of("key1", " \" ", "key2", " ' ", "key3", " ]) "))
+                .addRoundTrip(varcharMapDataType, Collections.singletonMap("key1", null));
     }
 
     @Test
@@ -903,6 +914,32 @@ public class TestPostgreSqlTypeMapping
                 identity());
     }
 
+    private DataType<Map<String, String>> varcharMapDataType()
+    {
+        return dataType(
+                "hstore",
+                getQueryRunner().getMetadata().getType(mapType(VARCHAR.getTypeSignature(), VARCHAR.getTypeSignature())),
+                value -> {
+                    List<String> formatted = value.entrySet().stream()
+                            .flatMap(entry -> Stream.of(entry.getKey(), entry.getValue()))
+                            .map(string -> {
+                                if (string == null) {
+                                    return "null";
+                                }
+                                return DataType.formatStringLiteral(string);
+                            })
+                            .collect(toImmutableList());
+                    ImmutableList.Builder<String> keys = ImmutableList.builder();
+                    ImmutableList.Builder<String> values = ImmutableList.builder();
+                    for (int i = 0; i < formatted.size(); i = i + 2) {
+                        keys.add(formatted.get(i));
+                        values.add(formatted.get(i + 1));
+                    }
+                    return String.format("MAP(ARRAY[%s], ARRAY[%s])", Joiner.on(',').join(keys.build()), Joiner.on(',').join(values.build()));
+                },
+                identity());
+    }
+
     public static DataType<java.util.UUID> uuidDataType()
     {
         return dataType(
@@ -941,6 +978,11 @@ public class TestPostgreSqlTypeMapping
     private DataSetup postgresCreateAndInsert(String tableNamePrefix)
     {
         return new CreateAndInsertDataSetup(new JdbcSqlExecutor(postgreSqlServer.getJdbcUrl()), tableNamePrefix);
+    }
+
+    private DataSetup postgresCreatePrestoInsert(String tableNamePrefix)
+    {
+        return new CreateAndPrestoInsertDataSetup(new JdbcSqlExecutor(postgreSqlServer.getJdbcUrl()), new PrestoSqlExecutor(getQueryRunner()), tableNamePrefix);
     }
 
     private static void checkIsGap(ZoneId zone, LocalDateTime dateTime)

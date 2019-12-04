@@ -92,12 +92,12 @@ public class TupleDomainParquetPredicate
             Statistics<?> columnStatistics = statistics.get(column);
             if (columnStatistics == null || columnStatistics.isEmpty()) {
                 // no stats for column
+                continue;
             }
-            else {
-                Domain domain = getDomain(effectivePredicateDomain.getType(), numberOfRows, columnStatistics, id, column.toString(), failOnCorruptedParquetStatistics);
-                if (effectivePredicateDomain.intersect(domain).isNone()) {
-                    return false;
-                }
+
+            Domain domain = getDomain(effectivePredicateDomain.getType(), numberOfRows, columnStatistics, id, column.toString(), failOnCorruptedParquetStatistics);
+            if (effectivePredicateDomain.intersect(domain).isNone()) {
+                return false;
             }
         }
         return true;
@@ -209,8 +209,8 @@ public class TupleDomainParquetPredicate
 
         if (isVarcharType(type) && statistics instanceof BinaryStatistics) {
             BinaryStatistics binaryStatistics = (BinaryStatistics) statistics;
-            Slice minSlice = Slices.wrappedBuffer(binaryStatistics.getMin().getBytes());
-            Slice maxSlice = Slices.wrappedBuffer(binaryStatistics.getMax().getBytes());
+            Slice minSlice = Slices.wrappedBuffer(binaryStatistics.genericGetMin().getBytes());
+            Slice maxSlice = Slices.wrappedBuffer(binaryStatistics.genericGetMax().getBytes());
             if (minSlice.compareTo(maxSlice) > 0) {
                 failWithCorruptionException(failOnCorruptedParquetStatistics, column, id, binaryStatistics);
                 return Domain.create(ValueSet.all(type), hasNullValue);
@@ -318,10 +318,7 @@ public class TupleDomainParquetPredicate
         return createDomain(type, hasNullValue, rangeStatistics, value -> value);
     }
 
-    private static <F, T extends Comparable<T>> Domain createDomain(Type type,
-            boolean hasNullValue,
-            ParquetRangeStatistics<F> rangeStatistics,
-            Function<F, T> function)
+    private static <F, T extends Comparable<T>> Domain createDomain(Type type, boolean hasNullValue, ParquetRangeStatistics<F> rangeStatistics, Function<F, T> function)
     {
         F min = rangeStatistics.getMin();
         F max = rangeStatistics.getMax();

@@ -13,7 +13,7 @@
  */
 package io.prestosql.plugin.sqlserver;
 
-import io.prestosql.tests.AbstractTestIntegrationSmokeTest;
+import io.prestosql.testing.AbstractTestIntegrationSmokeTest;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.Test;
 
@@ -55,12 +55,43 @@ public class TestSqlServerIntegrationSmokeTest
     }
 
     @Test
+    public void testInsertInPresenceOfNotSupportedColumn()
+    {
+        sqlServer.execute("CREATE TABLE test_insert_not_supported_column_present(x bigint, y sql_variant, z varchar(10))");
+        // Check that column y is not supported.
+        assertQuery("SELECT column_name FROM information_schema.columns WHERE table_name = 'test_insert_not_supported_column_present'", "VALUES 'x', 'z'");
+        assertUpdate("INSERT INTO test_insert_not_supported_column_present (x, z) VALUES (123, 'test')", 1);
+        assertQuery("SELECT x, z FROM test_insert_not_supported_column_present", "SELECT 123, 'test'");
+        assertUpdate("DROP TABLE test_insert_not_supported_column_present");
+    }
+
+    @Test
     public void testView()
     {
         sqlServer.execute("CREATE VIEW test_view AS SELECT * FROM orders");
         assertTrue(getQueryRunner().tableExists(getSession(), "test_view"));
         assertQuery("SELECT orderkey FROM test_view", "SELECT orderkey FROM orders");
         sqlServer.execute("DROP VIEW IF EXISTS test_view");
+    }
+
+    @Test
+    public void testColumnComment()
+            throws Exception
+    {
+        try (AutoCloseable ignoreTable = withTable("test_column_comment",
+                "(col1 bigint, col2 bigint, col3 bigint)")) {
+            sqlServer.execute("" +
+                    "EXEC sp_addextendedproperty " +
+                    " 'MS_Description', 'test comment', " +
+                    " 'Schema', 'dbo', " +
+                    " 'Table', 'test_column_comment', " +
+                    " 'Column', 'col1'");
+
+            // SQL Server JDBC driver doesn't support REMARKS for column comment https://github.com/Microsoft/mssql-jdbc/issues/646
+            assertQuery(
+                    "SELECT column_name, comment FROM information_schema.columns WHERE table_schema = 'dbo' AND table_name = 'test_column_comment'",
+                    "VALUES ('col1', null), ('col2', null), ('col3', null)");
+        }
     }
 
     @Test

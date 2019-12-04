@@ -24,7 +24,7 @@ import io.airlift.bytecode.Variable;
 import io.airlift.bytecode.control.IfStatement;
 import io.prestosql.annotation.UsedByGeneratedCode;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -48,6 +48,7 @@ import static io.airlift.bytecode.Access.STATIC;
 import static io.airlift.bytecode.Access.a;
 import static io.airlift.bytecode.Parameter.arg;
 import static io.airlift.bytecode.ParameterizedType.type;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.orderableTypeParameter;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.RETURN_NULL_ON_NULL;
@@ -76,15 +77,17 @@ public abstract class AbstractGreatestLeast
         super(new FunctionMetadata(
                 new Signature(
                         name,
-                        FunctionKind.SCALAR,
                         ImmutableList.of(orderableTypeParameter("E")),
                         ImmutableList.of(),
                         new TypeSignature("E"),
                         ImmutableList.of(new TypeSignature("E")),
                         true),
                 false,
+                ImmutableList.of(new FunctionArgumentDefinition(false)),
+                false,
                 true,
-                description));
+                description,
+                SCALAR));
         this.operatorType = requireNonNull(operatorType, "operatorType is null");
     }
 

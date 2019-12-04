@@ -15,9 +15,9 @@ package io.prestosql.plugin.mysql;
 
 import io.airlift.testing.mysql.TestingMySqlServer;
 import io.prestosql.Session;
+import io.prestosql.testing.AbstractTestIntegrationSmokeTest;
 import io.prestosql.testing.MaterializedResult;
 import io.prestosql.testing.MaterializedRow;
-import io.prestosql.tests.AbstractTestIntegrationSmokeTest;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.Test;
@@ -108,6 +108,18 @@ public class TestMySqlIntegrationSmokeTest
         assertUpdate("INSERT INTO test_insert VALUES (123, 'test')", 1);
         assertQuery("SELECT * FROM test_insert", "SELECT 123 x, 'test' y");
         assertUpdate("DROP TABLE test_insert");
+    }
+
+    @Test
+    public void testInsertInPresenceOfNotSupportedColumn()
+            throws Exception
+    {
+        execute("CREATE TABLE tpch.test_insert_not_supported_column_present(x bigint, y decimal(50,0), z varchar(10))");
+        // Check that column y is not supported.
+        assertQuery("SELECT column_name FROM information_schema.columns WHERE table_name = 'test_insert_not_supported_column_present'", "VALUES 'x', 'z'");
+        assertUpdate("INSERT INTO test_insert_not_supported_column_present (x, z) VALUES (123, 'test')", 1);
+        assertQuery("SELECT x, z FROM test_insert_not_supported_column_present", "SELECT 123, 'test'");
+        assertUpdate("DROP TABLE test_insert_not_supported_column_present");
     }
 
     @Test
@@ -205,6 +217,19 @@ public class TestMySqlIntegrationSmokeTest
                 "VALUES (NULL, CAST('2012-12-31' AS DATE), 1), (CAST('2013-01-01' AS DATE), CAST('2013-01-02' AS DATE), 2)");
 
         assertUpdate("DROP TABLE test_insert_not_null");
+    }
+
+    @Test
+    public void testColumnComment()
+            throws Exception
+    {
+        execute("CREATE TABLE tpch.test_column_comment (col1 bigint COMMENT 'test comment', col2 bigint COMMENT '', col3 bigint)");
+
+        assertQuery(
+                "SELECT column_name, comment FROM information_schema.columns WHERE table_schema = 'tpch' AND table_name = 'test_column_comment'",
+                "VALUES ('col1', 'test comment'), ('col2', null), ('col3', null)");
+
+        assertUpdate("DROP TABLE test_column_comment");
     }
 
     private void execute(String sql)

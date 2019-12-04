@@ -98,7 +98,8 @@ statement
         (LIKE pattern=string (ESCAPE escape=string)?)?                 #showTables
     | SHOW SCHEMAS ((FROM | IN) identifier)?
         (LIKE pattern=string (ESCAPE escape=string)?)?                 #showSchemas
-    | SHOW CATALOGS (LIKE pattern=string)?                             #showCatalogs
+    | SHOW CATALOGS
+        (LIKE pattern=string (ESCAPE escape=string)?)?                 #showCatalogs
     | SHOW COLUMNS (FROM | IN) qualifiedName                           #showColumns
     | SHOW STATS FOR qualifiedName                                     #showStats
     | SHOW STATS FOR '(' querySpecification ')'                        #showStatsForQuery
@@ -106,8 +107,10 @@ statement
     | SHOW ROLE GRANTS ((FROM | IN) identifier)?                       #showRoleGrants
     | DESCRIBE qualifiedName                                           #showColumns
     | DESC qualifiedName                                               #showColumns
-    | SHOW FUNCTIONS                                                   #showFunctions
-    | SHOW SESSION                                                     #showSession
+    | SHOW FUNCTIONS
+        (LIKE pattern=string (ESCAPE escape=string)?)?                 #showFunctions
+    | SHOW SESSION
+        (LIKE pattern=string (ESCAPE escape=string)?)?                 #showSession
     | SET SESSION qualifiedName EQ expression                          #setSession
     | RESET SESSION qualifiedName                                      #resetSession
     | START TRANSACTION (transactionMode (',' transactionMode)*)?      #startTransaction
@@ -612,8 +615,8 @@ INVOKER: 'INVOKER';
 IO: 'IO';
 IS: 'IS';
 ISOLATION: 'ISOLATION';
-JSON: 'JSON';
 JOIN: 'JOIN';
+JSON: 'JSON';
 LAST: 'LAST';
 LATERAL: 'LATERAL';
 LEFT: 'LEFT';
@@ -654,9 +657,9 @@ PARTITIONS: 'PARTITIONS';
 PATH: 'PATH';
 POSITION: 'POSITION';
 PRECEDING: 'PRECEDING';
+PRECISION: 'PRECISION';
 PREPARE: 'PREPARE';
 PRIVILEGES: 'PRIVILEGES';
-PRECISION: 'PRECISION';
 PROPERTIES: 'PROPERTIES';
 RANGE: 'RANGE';
 READ: 'READ';
@@ -768,11 +771,11 @@ DOUBLE_VALUE
     ;
 
 IDENTIFIER
-    : (LETTER | '_') (LETTER | DIGIT | '_' | '@' | ':')*
+    : (LETTER | '_') (LETTER | DIGIT | '_')*
     ;
 
 DIGIT_IDENTIFIER
-    : DIGIT (LETTER | DIGIT | '_' | '@' | ':')+
+    : DIGIT (LETTER | DIGIT | '_')+
     ;
 
 QUOTED_IDENTIFIER

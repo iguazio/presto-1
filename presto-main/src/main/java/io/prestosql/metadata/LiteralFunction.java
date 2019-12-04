@@ -49,15 +49,17 @@ public class LiteralFunction
         super(new FunctionMetadata(
                 new Signature(
                         LITERAL_FUNCTION_NAME,
-                        SCALAR,
                         ImmutableList.of(typeVariable("F"), typeVariable("T")),
                         ImmutableList.of(),
                         new TypeSignature("T"),
                         ImmutableList.of(new TypeSignature("F")),
                         false),
+                false,
+                ImmutableList.of(new FunctionArgumentDefinition(false)),
                 true,
                 true,
-                "literal"));
+                "literal",
+                SCALAR));
     }
 
     @Override

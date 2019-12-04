@@ -36,8 +36,10 @@ import java.lang.invoke.MethodHandle;
 import java.util.List;
 import java.util.Optional;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static io.prestosql.metadata.FunctionKind.AGGREGATE;
 import static io.prestosql.metadata.SignatureBinder.applyBoundVariables;
 import static io.prestosql.operator.ParametricFunctionHelpers.bindDependencies;
 import static io.prestosql.operator.aggregation.AggregationUtils.generateAggregationName;
@@ -51,18 +53,25 @@ public class ParametricAggregation
         extends SqlAggregationFunction
 {
     private final ParametricImplementationsGroup<AggregationImplementation> implementations;
-    private final boolean decomposable;
-    private final boolean orderSensitive;
 
     public ParametricAggregation(
             Signature signature,
             AggregationHeader details,
             ParametricImplementationsGroup<AggregationImplementation> implementations)
     {
-        super(new FunctionMetadata(signature, details.isHidden(), true, details.getDescription().orElse("")));
+        super(
+                new FunctionMetadata(
+                        signature,
+                        true,
+                        implementations.getArgumentDefinitions(),
+                        details.isHidden(),
+                        true,
+                        details.getDescription().orElse(""),
+                        AGGREGATE),
+                details.isDecomposable(),
+                details.isOrderSensitive());
         requireNonNull(details, "details is null");
-        this.decomposable = details.isDecomposable();
-        this.orderSensitive = details.isOrderSensitive();
+        checkArgument(implementations.isNullable(), "currently aggregates are required to be nullable");
         this.implementations = requireNonNull(implementations, "implementations is null");
     }
 
@@ -122,8 +131,8 @@ public class ParametricAggregation
                 inputTypes,
                 ImmutableList.of(stateSerializer.getSerializedType()),
                 outputType,
-                decomposable,
-                orderSensitive,
+                isDecomposable(),
+                isOrderSensitive(),
                 new LazyAccumulatorFactoryBinder(aggregationMetadata, classLoader));
     }
 

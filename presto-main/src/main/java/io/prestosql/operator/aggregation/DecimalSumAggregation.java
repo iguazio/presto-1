@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.airlift.slice.Slice;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -69,15 +70,20 @@ public class DecimalSumAggregation
 
     public DecimalSumAggregation()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        new TypeSignature("decimal", numericParameter(38), typeVariable("s")),
-                        ImmutableList.of(new TypeSignature("decimal", typeVariable("p"), typeVariable("s")))),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                new TypeSignature("decimal", numericParameter(38), typeVariable("s")),
+                                ImmutableList.of(new TypeSignature("decimal", typeVariable("p"), typeVariable("s")))),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "Calculates the sum over the input values",
+                        AGGREGATE),
                 true,
-                "Calculates the sum over the input values"));
+                false);
     }
 
     @Override

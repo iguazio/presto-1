@@ -26,7 +26,7 @@ import io.airlift.bytecode.control.ForLoop;
 import io.airlift.bytecode.control.IfStatement;
 import io.prestosql.annotation.UsedByGeneratedCode;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -65,6 +65,7 @@ import static io.airlift.bytecode.expression.BytecodeExpressions.lessThan;
 import static io.airlift.bytecode.expression.BytecodeExpressions.newInstance;
 import static io.airlift.bytecode.expression.BytecodeExpressions.subtract;
 import static io.airlift.bytecode.instruction.VariableInstruction.incrementVariable;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.functionTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
@@ -89,7 +90,6 @@ public final class MapTransformValueFunction
         super(new FunctionMetadata(
                 new Signature(
                         "transform_values",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(typeVariable("K"), typeVariable("V1"), typeVariable("V2")),
                         ImmutableList.of(),
                         mapType(new TypeSignature("K"), new TypeSignature("V2")),
@@ -98,8 +98,13 @@ public final class MapTransformValueFunction
                                 functionType(new TypeSignature("K"), new TypeSignature("V1"), new TypeSignature("V2"))),
                         false),
                 false,
+                ImmutableList.of(
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(false)),
                 false,
-                "apply lambda to each entry of the map and transform the value"));
+                false,
+                "apply lambda to each entry of the map and transform the value",
+                SCALAR));
     }
 
     @Override

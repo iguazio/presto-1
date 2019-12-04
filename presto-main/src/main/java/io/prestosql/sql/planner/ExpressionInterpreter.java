@@ -27,7 +27,6 @@ import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.ResolvedFunction;
 import io.prestosql.operator.scalar.ArraySubscriptOperator;
-import io.prestosql.operator.scalar.ScalarFunctionImplementation;
 import io.prestosql.spi.PrestoException;
 import io.prestosql.spi.block.Block;
 import io.prestosql.spi.block.BlockBuilder;
@@ -61,8 +60,6 @@ import io.prestosql.sql.tree.CurrentUser;
 import io.prestosql.sql.tree.DereferenceExpression;
 import io.prestosql.sql.tree.ExistsPredicate;
 import io.prestosql.sql.tree.Expression;
-import io.prestosql.sql.tree.ExpressionRewriter;
-import io.prestosql.sql.tree.ExpressionTreeRewriter;
 import io.prestosql.sql.tree.FieldReference;
 import io.prestosql.sql.tree.FunctionCall;
 import io.prestosql.sql.tree.Identifier;
@@ -120,7 +117,6 @@ import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static io.prestosql.metadata.LiteralFunction.isSupportedLiteralType;
-import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.RETURN_NULL_ON_NULL;
 import static io.prestosql.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
 import static io.prestosql.spi.StandardErrorCode.NOT_SUPPORTED;
 import static io.prestosql.spi.StandardErrorCode.TYPE_MISMATCH;
@@ -136,6 +132,7 @@ import static io.prestosql.sql.analyzer.TypeSignatureTranslator.toSqlType;
 import static io.prestosql.sql.analyzer.TypeSignatureTranslator.toTypeSignature;
 import static io.prestosql.sql.gen.VarArgsToMapAdapterGenerator.generateVarArgsToMapAdapter;
 import static io.prestosql.sql.planner.DeterminismEvaluator.isDeterministic;
+import static io.prestosql.sql.planner.ResolvedFunctionCallRewriter.rewriteResolvedFunctions;
 import static io.prestosql.sql.planner.iterative.rule.CanonicalizeExpressionRewriter.canonicalizeExpression;
 import static io.prestosql.type.JsonType.JSON;
 import static io.prestosql.type.LikeFunctions.isLikePattern;
@@ -184,8 +181,8 @@ public class ExpressionInterpreter
         Type actualType = analyzer.getExpressionTypes().get(NodeRef.of(expression));
         if (!new TypeCoercion(metadata::getType).canCoerce(actualType, expectedType)) {
             throw semanticException(TYPE_MISMATCH, expression, format("Cannot cast type %s to %s",
-                    actualType.getTypeSignature(),
-                    expectedType.getTypeSignature()));
+                    actualType.getDisplayName(),
+                    expectedType.getDisplayName()));
         }
 
         Map<NodeRef<Expression>, Type> coercions = ImmutableMap.<NodeRef<Expression>, Type>builder()
@@ -233,27 +230,7 @@ public class ExpressionInterpreter
         analyzer.analyze(canonicalized, Scope.create());
 
         // resolve functions
-        Map<NodeRef<FunctionCall>, ResolvedFunction> resolvedFunctions = analyzer.getResolvedFunctions();
-        Expression resolved = ExpressionTreeRewriter.rewriteWith(new ExpressionRewriter<Void>()
-        {
-            @Override
-            public Expression rewriteFunctionCall(FunctionCall node, Void context, ExpressionTreeRewriter<Void> treeRewriter)
-            {
-                ResolvedFunction resolvedFunction = resolvedFunctions.get(NodeRef.of(node));
-                checkArgument(resolvedFunction != null, "Function has not been analyzed: %s", node);
-
-                FunctionCall rewritten = treeRewriter.defaultRewrite(node, context);
-                return new FunctionCall(
-                        rewritten.getLocation(),
-                        resolvedFunction.toQualifiedName(),
-                        rewritten.getWindow(),
-                        rewritten.getFilter(),
-                        rewritten.getOrderBy(),
-                        rewritten.isDistinct(),
-                        rewritten.getNullTreatment(),
-                        rewritten.getArguments());
-            }
-        }, canonicalized);
+        Expression resolved = rewriteResolvedFunctions(canonicalized, analyzer.getResolvedFunctions());
 
         // The optimization above may have rewritten the expression tree which breaks all the identity maps, so redo the analysis
         // to re-analyze coercions that might be necessary
@@ -611,12 +588,14 @@ public class ExpressionInterpreter
             boolean found = false;
             List<Object> values = new ArrayList<>(valueList.getValues().size());
             List<Type> types = new ArrayList<>(valueList.getValues().size());
+            List<Expression> originalValues = new ArrayList<>(valueList.getValues().size());
             for (Expression expression : valueList.getValues()) {
                 Object inValue = process(expression, context);
                 if (value instanceof Expression || inValue instanceof Expression) {
                     hasUnresolvedValue = true;
                     values.add(inValue);
                     types.add(type(expression));
+                    originalValues.add(expression);
                     continue;
                 }
 
@@ -640,7 +619,7 @@ public class ExpressionInterpreter
 
             if (hasUnresolvedValue) {
                 Type type = type(node.getValue());
-                List<Expression> expressionValues = toExpressions(values, types);
+                List<Expression> expressionValues = toExpressions(values, types, originalValues);
                 List<Expression> simplifiedExpressionValues = Stream.concat(
                         expressionValues.stream()
                                 .filter(expression -> isDeterministic(expression, metadata))
@@ -936,10 +915,9 @@ public class ExpressionInterpreter
             ResolvedFunction resolvedFunction = ResolvedFunction.fromQualifiedName(node.getName())
                     .orElseThrow(() -> new IllegalArgumentException("function call has not been resolved: " + node));
             FunctionMetadata functionMetadata = metadata.getFunctionMetadata(resolvedFunction);
-            ScalarFunctionImplementation function = metadata.getScalarFunctionImplementation(resolvedFunction);
             for (int i = 0; i < argumentValues.size(); i++) {
                 Object value = argumentValues.get(i);
-                if (value == null && function.getArgumentProperty(i).getNullConvention() == RETURN_NULL_ON_NULL) {
+                if (value == null && !functionMetadata.getArgumentDefinitions().get(i).isNullable()) {
                     return null;
                 }
             }
@@ -955,7 +933,7 @@ public class ExpressionInterpreter
                 return new FunctionCallBuilder(metadata)
                         .setName(node.getName())
                         .setWindow(node.getWindow())
-                        .setArguments(argumentTypes, toExpressions(argumentValues, argumentTypes))
+                        .setArguments(argumentTypes, toExpressions(argumentValues, argumentTypes, node.getArguments()))
                         .build();
             }
             return functionInvoker.invoke(resolvedFunction, session, argumentValues);
@@ -1046,7 +1024,7 @@ public class ExpressionInterpreter
                     (escape == null || escape instanceof Slice)) {
                 Regex regex;
                 if (escape == null) {
-                    regex = LikeFunctions.likePattern((Slice) pattern);
+                    regex = LikeFunctions.compileLikePattern((Slice) pattern);
                 }
                 else {
                     regex = LikeFunctions.likePattern((Slice) pattern, (Slice) escape);
@@ -1108,7 +1086,7 @@ public class ExpressionInterpreter
                     result = LikeFunctions.likePattern(pattern.getSlice(), escape);
                 }
                 else {
-                    result = LikeFunctions.likePattern(pattern.getSlice());
+                    result = LikeFunctions.compileLikePattern(pattern.getSlice());
                 }
 
                 likePatternCache.put(node, result);
@@ -1206,7 +1184,7 @@ public class ExpressionInterpreter
                 values.add(process(argument, context));
             }
             if (hasUnresolvedValue(values)) {
-                return new Row(toExpressions(values, parameterTypes));
+                return new Row(toExpressions(values, parameterTypes, arguments));
             }
             else {
                 BlockBuilder blockBuilder = new RowBlockBuilder(parameterTypes, null, 1);
@@ -1311,9 +1289,25 @@ public class ExpressionInterpreter
             return literalEncoder.toExpression(base, type);
         }
 
-        private List<Expression> toExpressions(List<Object> values, List<Type> types)
+        private List<Expression> toExpressions(List<Object> values, List<Type> types, List<Expression> originalArguments)
         {
-            return literalEncoder.toExpressions(values, types);
+            requireNonNull(values, "values is null");
+            requireNonNull(types, "types is null");
+            requireNonNull(originalArguments, "originalArguments is null");
+            checkArgument(values.size() == types.size() && types.size() == originalArguments.size(), "values, types, and originalArguments do not have the same size");
+
+            ImmutableList.Builder<Expression> expressions = ImmutableList.builder();
+            for (int i = 0; i < values.size(); i++) {
+                Object object = values.get(i);
+                Type type = types.get(i);
+                if (LiteralEncoder.canEncode(object, type)) {
+                    expressions.add(toExpression(object, type));
+                }
+                else {
+                    expressions.add(originalArguments.get(i));
+                }
+            }
+            return expressions.build();
         }
     }
 

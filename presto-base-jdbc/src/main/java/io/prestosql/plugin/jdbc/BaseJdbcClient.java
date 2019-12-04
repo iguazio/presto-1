@@ -56,6 +56,7 @@ import java.util.function.Function;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Strings.emptyToNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
@@ -254,7 +255,15 @@ public class BaseJdbcClient
                 // skip unsupported column types
                 if (columnMapping.isPresent()) {
                     boolean nullable = (resultSet.getInt("NULLABLE") != columnNoNulls);
-                    columns.add(new JdbcColumnHandle(columnName, typeHandle, columnMapping.get().getType(), nullable));
+                    // Note: some databases (e.g. SQL Server) do not return column remarks/comment here.
+                    Optional<String> comment = Optional.ofNullable(emptyToNull(resultSet.getString("REMARKS")));
+                    columns.add(JdbcColumnHandle.builder()
+                            .setColumnName(columnName)
+                            .setJdbcTypeHandle(typeHandle)
+                            .setColumnType(columnMapping.get().getType())
+                            .setNullable(nullable)
+                            .setComment(comment)
+                            .build());
                 }
             }
             if (columns.isEmpty()) {
@@ -524,7 +533,10 @@ public class BaseJdbcClient
     {
         String temporaryTable = quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTemporaryTableName());
         String targetTable = quoted(handle.getCatalogName(), handle.getSchemaName(), handle.getTableName());
-        String insertSql = format("INSERT INTO %s SELECT * FROM %s", targetTable, temporaryTable);
+        String columnNames = handle.getColumnNames().stream()
+                .map(this::quoted)
+                .collect(joining(", "));
+        String insertSql = format("INSERT INTO %s (%s) SELECT * FROM %s", targetTable, columnNames, temporaryTable);
         String cleanupSql = "DROP TABLE " + temporaryTable;
 
         try (Connection connection = getConnection(identity, handle)) {

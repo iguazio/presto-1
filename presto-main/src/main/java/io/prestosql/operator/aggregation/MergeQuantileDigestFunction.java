@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.airlift.stats.QuantileDigest;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -65,18 +66,23 @@ public final class MergeQuantileDigestFunction
 
     public MergeQuantileDigestFunction()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(comparableTypeParameter("T")),
-                        ImmutableList.of(),
-                        parametricType("qdigest", new TypeSignature("T")),
-                        ImmutableList.of(parametricType("qdigest", new TypeSignature("T"))),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(comparableTypeParameter("T")),
+                                ImmutableList.of(),
+                                parametricType("qdigest", new TypeSignature("T")),
+                                ImmutableList.of(parametricType("qdigest", new TypeSignature("T"))),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "Merges the input quantile digests into a single quantile digest",
+                        AGGREGATE),
                 true,
-                "Merges the input quantile digests into a single quantile digest"));
+                true);
     }
 
     @Override

@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -58,18 +59,23 @@ public class RealAverageAggregation
 
     protected RealAverageAggregation()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(),
-                        ImmutableList.of(),
-                        REAL.getTypeSignature(),
-                        ImmutableList.of(REAL.getTypeSignature()),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(),
+                                ImmutableList.of(),
+                                REAL.getTypeSignature(),
+                                ImmutableList.of(REAL.getTypeSignature()),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "Returns the average value of the argument",
+                        AGGREGATE),
                 true,
-                "Returns the average value of the argument"));
+                false);
     }
 
     @Override

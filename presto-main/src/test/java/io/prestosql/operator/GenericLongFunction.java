@@ -15,6 +15,7 @@ package io.prestosql.operator;
 
 import com.google.common.collect.ImmutableList;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionKind;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
@@ -25,6 +26,7 @@ import io.prestosql.operator.scalar.ScalarFunctionImplementation;
 import java.lang.invoke.MethodHandle;
 import java.util.function.LongUnaryOperator;
 
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.RETURN_NULL_ON_NULL;
 import static io.prestosql.spi.type.BigintType.BIGINT;
@@ -46,9 +48,12 @@ public final class GenericLongFunction
                         FunctionKind.SCALAR,
                         BIGINT.getTypeSignature(),
                         BIGINT.getTypeSignature()),
+                false,
+                ImmutableList.of(new FunctionArgumentDefinition(false)),
                 true,
                 true,
-                "generic long function for test"));
+                "generic long function for test",
+                SCALAR));
         this.longUnaryOperator = longUnaryOperator;
     }
 

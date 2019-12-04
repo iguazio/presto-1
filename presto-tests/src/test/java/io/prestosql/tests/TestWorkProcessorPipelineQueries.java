@@ -16,7 +16,10 @@ package io.prestosql.tests;
 import io.prestosql.Session;
 import io.prestosql.execution.QueryInfo;
 import io.prestosql.execution.QueryManager;
+import io.prestosql.testing.AbstractTestQueryFramework;
+import io.prestosql.testing.DistributedQueryRunner;
 import io.prestosql.testing.MaterializedResult;
+import io.prestosql.testing.ResultWithQueryId;
 import io.prestosql.tests.tpch.TpchQueryRunnerBuilder;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.Test;
@@ -24,7 +27,7 @@ import org.testng.annotations.Test;
 import static io.prestosql.SystemSessionProperties.JOIN_DISTRIBUTION_TYPE;
 import static io.prestosql.SystemSessionProperties.WORK_PROCESSOR_PIPELINES;
 import static io.prestosql.sql.analyzer.FeaturesConfig.JoinDistributionType.BROADCAST;
-import static io.prestosql.tests.QueryAssertions.assertEqualsIgnoreOrder;
+import static io.prestosql.testing.QueryAssertions.assertEqualsIgnoreOrder;
 import static org.testng.Assert.assertTrue;
 
 public class TestWorkProcessorPipelineQueries
@@ -55,6 +58,12 @@ public class TestWorkProcessorPipelineQueries
     {
         assertLazyQuery("SELECT * FROM orders WHERE orderkey IN (SELECT orderkey FROM orders WHERE orderdate < DATE '1994-01-01')");
         assertLazyQuery("SELECT * FROM orders WHERE orderkey NOT IN (SELECT orderkey FROM orders WHERE orderdate >= DATE '1994-01-01')");
+    }
+
+    @Test
+    public void testJoin()
+    {
+        assertLazyQuery("SELECT * FROM lineitem INNER JOIN part ON lineitem.partkey = part.partkey AND mfgr = 'Manufacturer#5'");
     }
 
     private void assertLazyQuery(@Language("SQL") String sql)

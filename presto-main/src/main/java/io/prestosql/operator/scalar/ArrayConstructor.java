@@ -26,7 +26,7 @@ import io.airlift.bytecode.Variable;
 import io.airlift.bytecode.control.IfStatement;
 import io.airlift.bytecode.expression.BytecodeExpression;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -55,6 +55,7 @@ import static io.airlift.bytecode.ParameterizedType.type;
 import static io.airlift.bytecode.expression.BytecodeExpressions.constantInt;
 import static io.airlift.bytecode.expression.BytecodeExpressions.constantNull;
 import static io.airlift.bytecode.expression.BytecodeExpressions.equal;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.USE_BOXED_TYPE;
@@ -77,15 +78,19 @@ public final class ArrayConstructor
         super(new FunctionMetadata(
                 new Signature(
                         "array_constructor",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(typeVariable("E")),
                         ImmutableList.of(),
                         arrayType(new TypeSignature("E")),
                         ImmutableList.of(new TypeSignature("E"), new TypeSignature("E")),
                         true),
+                false,
+                ImmutableList.of(
+                        new FunctionArgumentDefinition(true),
+                        new FunctionArgumentDefinition(true)),
                 true,
                 true,
-                ""));
+                "",
+                SCALAR));
     }
 
     @Override

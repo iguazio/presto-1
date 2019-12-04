@@ -18,7 +18,7 @@ import com.google.common.primitives.Primitives;
 import io.airlift.slice.Slice;
 import io.prestosql.annotation.UsedByGeneratedCode;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -30,6 +30,7 @@ import io.prestosql.spi.type.TypeSignature;
 
 import java.lang.invoke.MethodHandle;
 
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.RETURN_NULL_ON_NULL;
@@ -54,15 +55,19 @@ public class MapElementAtFunction
         super(new FunctionMetadata(
                 new Signature(
                         "element_at",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(typeVariable("K"), typeVariable("V")),
                         ImmutableList.of(),
                         new TypeSignature("V"),
                         ImmutableList.of(mapType(new TypeSignature("K"), new TypeSignature("V")), new TypeSignature("K")),
                         false),
+                true,
+                ImmutableList.of(
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(false)),
                 false,
                 true,
-                "Get value for the given key, or null if it does not exist"));
+                "Get value for the given key, or null if it does not exist",
+                SCALAR));
     }
 
     @Override

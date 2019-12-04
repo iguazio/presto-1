@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -71,18 +72,23 @@ public class ArbitraryAggregationFunction
 
     protected ArbitraryAggregationFunction()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(typeVariable("T")),
-                        ImmutableList.of(),
-                        new TypeSignature("T"),
-                        ImmutableList.of(new TypeSignature("T")),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(typeVariable("T")),
+                                ImmutableList.of(),
+                                new TypeSignature("T"),
+                                ImmutableList.of(new TypeSignature("T")),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "return an arbitrary non-null input value",
+                        AGGREGATE),
                 true,
-                "return an arbitrary non-null input value"));
+                false);
     }
 
     @Override

@@ -24,6 +24,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.security.Provider;
@@ -109,7 +110,7 @@ public class V3IOConfigurationProvider
             final byte[] phrase =
                     new AesGcmEncryption().decrypt(toKey(encryptionKey, salt), encryptedToken, associatedData);
 
-            return new String(phrase);
+            return new String(phrase, Charset.defaultCharset());
         }
 
         // Convert to 16 bytes key

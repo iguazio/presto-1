@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -66,22 +67,31 @@ public class ReduceAggregationFunction
 
     public ReduceAggregationFunction()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(typeVariable("T"), typeVariable("S")),
-                        ImmutableList.of(),
-                        new TypeSignature("S"),
-                        ImmutableList.of(
-                                new TypeSignature("T"),
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(typeVariable("T"), typeVariable("S")),
+                                ImmutableList.of(),
                                 new TypeSignature("S"),
-                                functionType(new TypeSignature("S"), new TypeSignature("T"), new TypeSignature("S")),
-                                functionType(new TypeSignature("S"), new TypeSignature("S"), new TypeSignature("S"))),
-                        false),
-                false,
+                                ImmutableList.of(
+                                        new TypeSignature("T"),
+                                        new TypeSignature("S"),
+                                        functionType(new TypeSignature("S"), new TypeSignature("T"), new TypeSignature("S")),
+                                        functionType(new TypeSignature("S"), new TypeSignature("S"), new TypeSignature("S"))),
+                                false),
+                        true,
+                        ImmutableList.of(
+                                new FunctionArgumentDefinition(false),
+                                new FunctionArgumentDefinition(false),
+                                new FunctionArgumentDefinition(false),
+                                new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "Reduce input elements into a single value",
+                        AGGREGATE),
                 true,
-                "Reduce input elements into a single value"));
+                false);
     }
 
     @Override

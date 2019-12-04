@@ -65,10 +65,6 @@ public class TestSqlParserErrorHandling
                         "line 1:19: backquoted identifiers are not supported; use double quotes to quote identifiers"},
                 {"select 1x from dual",
                         "line 1:8: identifiers must not start with a digit; surround the identifier with double quotes"},
-                {"select * from foo@bar",
-                        "line 1:15: identifiers must not contain '@'"},
-                {"select * from foo:bar",
-                        "line 1:15: identifiers must not contain ':'"},
                 {"select fuu from dual order by fuu order by fuu",
                         "line 1:35: mismatched input 'order'. Expecting: '%', '*', '+', ',', '-', '.', '/', 'AND', 'ASC', 'AT', 'DESC', 'FETCH', 'LIMIT', 'NULLS', 'OFFSET', 'OR', '[', '||', <EOF>, <predicate>"},
                 {"select fuu from dual limit 10 order by fuu",
@@ -139,7 +135,13 @@ public class TestSqlParserErrorHandling
                 {"WITH t AS (SELECT 1 SELECT t.* FROM t",
                         "line 1:21: mismatched input 'SELECT'. Expecting: '%', '(', ')', '*', '+', ',', '-', '.', '/', 'AND', 'AS', 'AT', 'EXCEPT', 'FETCH', 'FROM', " +
                                 "'GROUP', 'HAVING', 'INTERSECT', 'LIMIT', 'OFFSET', 'OR', 'ORDER', 'SELECT', 'TABLE', 'UNION', 'VALUES', 'WHERE', '[', '||', <EOF>, " +
-                                "<identifier>, <predicate>"}
+                                "<identifier>, <predicate>"},
+                {"SHOW CATALOGS LIKE '%$_%' ESCAPE",
+                        "line 1:33: mismatched input '<EOF>'. Expecting: <string>"},
+                {"SHOW FUNCTIONS LIKE '%$_%' ESCAPE",
+                        "line 1:34: mismatched input '<EOF>'. Expecting: <string>"},
+                {"SHOW SESSION LIKE '%$_%' ESCAPE",
+                        "line 1:32: mismatched input '<EOF>'. Expecting: <string>"}
         };
     }
 

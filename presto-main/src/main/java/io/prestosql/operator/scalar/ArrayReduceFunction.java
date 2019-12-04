@@ -16,7 +16,7 @@ package io.prestosql.operator.scalar;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Primitives;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -29,6 +29,7 @@ import io.prestosql.sql.gen.lambda.UnaryFunctionInterface;
 
 import java.lang.invoke.MethodHandle;
 
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.functionTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
@@ -51,7 +52,6 @@ public final class ArrayReduceFunction
         super(new FunctionMetadata(
                 new Signature(
                         "reduce",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(typeVariable("T"), typeVariable("S"), typeVariable("R")),
                         ImmutableList.of(),
                         new TypeSignature("R"),
@@ -61,9 +61,16 @@ public final class ArrayReduceFunction
                                 functionType(new TypeSignature("S"), new TypeSignature("T"), new TypeSignature("S")),
                                 functionType(new TypeSignature("S"), new TypeSignature("R"))),
                         false),
+                true,
+                ImmutableList.of(
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(true),
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(false)),
                 false,
                 false,
-                "Reduce elements of the array into a single value"));
+                "Reduce elements of the array into a single value",
+                SCALAR));
     }
 
     @Override

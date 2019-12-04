@@ -24,6 +24,7 @@ import io.airlift.bytecode.Parameter;
 import io.airlift.bytecode.control.IfStatement;
 import io.airlift.bytecode.expression.BytecodeExpression;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -88,18 +89,25 @@ public abstract class AbstractMinMaxBy
 
     protected AbstractMinMaxBy(boolean min, String description)
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        (min ? "min" : "max") + "_by",
-                        AGGREGATE,
-                        ImmutableList.of(orderableTypeParameter("K"), typeVariable("V")),
-                        ImmutableList.of(),
-                        new TypeSignature("V"),
-                        ImmutableList.of(new TypeSignature("V"), new TypeSignature("K")),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                (min ? "min" : "max") + "_by",
+                                ImmutableList.of(orderableTypeParameter("K"), typeVariable("V")),
+                                ImmutableList.of(),
+                                new TypeSignature("V"),
+                                ImmutableList.of(new TypeSignature("V"), new TypeSignature("K")),
+                                false),
+                        true,
+                        ImmutableList.of(
+                                new FunctionArgumentDefinition(true),
+                                new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        description,
+                        AGGREGATE),
                 true,
-                description));
+                false);
         this.min = min;
     }
 

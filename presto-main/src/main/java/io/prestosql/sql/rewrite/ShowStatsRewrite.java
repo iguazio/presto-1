@@ -76,6 +76,7 @@ import static io.prestosql.spi.type.DateType.DATE;
 import static io.prestosql.spi.type.DoubleType.DOUBLE;
 import static io.prestosql.spi.type.VarcharType.VARCHAR;
 import static io.prestosql.sql.QueryUtil.aliased;
+import static io.prestosql.sql.QueryUtil.query;
 import static io.prestosql.sql.QueryUtil.selectAll;
 import static io.prestosql.sql.QueryUtil.simpleQuery;
 import static io.prestosql.sql.analyzer.SemanticExceptions.semanticException;
@@ -122,19 +123,17 @@ public class ShowStatsRewrite
             if (node.getRelation() instanceof TableSubquery) {
                 Query query = ((TableSubquery) node.getRelation()).getQuery();
                 QuerySpecification specification = (QuerySpecification) query.getQueryBody();
-                Plan plan = queryExplainer.get().getLogicalPlan(session, new Query(Optional.empty(), specification, Optional.empty(), Optional.empty(), Optional.empty()), parameters, warningCollector);
+                Plan plan = queryExplainer.get().getLogicalPlan(session, query(specification), parameters, warningCollector);
                 validateShowStatsSubquery(node, query, specification, plan);
                 Table table = (Table) specification.getFrom().get();
                 Constraint constraint = getConstraint(plan);
                 return rewriteShowStats(node, table, constraint);
             }
-            else if (node.getRelation() instanceof Table) {
+            if (node.getRelation() instanceof Table) {
                 Table table = (Table) node.getRelation();
                 return rewriteShowStats(node, table, Constraint.alwaysTrue());
             }
-            else {
-                throw new IllegalArgumentException("Expected either TableSubquery or Table as relation");
-            }
+            throw new IllegalArgumentException("Expected either TableSubquery or Table as relation");
         }
 
         private void validateShowStatsSubquery(ShowStats node, Query query, QuerySpecification querySpecification, Plan plan)

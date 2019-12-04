@@ -13,28 +13,53 @@
  */
 package io.prestosql.metadata;
 
+import com.google.common.collect.ImmutableList;
+
+import java.util.List;
+
 import static java.util.Objects.requireNonNull;
 
 public class FunctionMetadata
 {
     private final FunctionId functionId;
     private final Signature signature;
+    private final boolean nullable;
+    private final List<FunctionArgumentDefinition> argumentDefinitions;
     private final boolean hidden;
     private final boolean deterministic;
     private final String description;
+    private final FunctionKind kind;
 
-    public FunctionMetadata(Signature signature, boolean hidden, boolean deterministic, String description)
+    public FunctionMetadata(
+            Signature signature,
+            boolean nullable,
+            List<FunctionArgumentDefinition> argumentDefinitions,
+            boolean hidden,
+            boolean deterministic,
+            String description,
+            FunctionKind kind)
     {
-        this(FunctionId.toFunctionId(signature), signature, hidden, deterministic, description);
+        this(FunctionId.toFunctionId(signature), signature, nullable, argumentDefinitions, hidden, deterministic, description, kind);
     }
 
-    public FunctionMetadata(FunctionId functionId, Signature signature, boolean hidden, boolean deterministic, String description)
+    public FunctionMetadata(
+            FunctionId functionId,
+            Signature signature,
+            boolean nullable,
+            List<FunctionArgumentDefinition> argumentDefinitions,
+            boolean hidden,
+            boolean deterministic,
+            String description,
+            FunctionKind kind)
     {
         this.functionId = requireNonNull(functionId, "functionId is null");
         this.signature = requireNonNull(signature, "signature is null");
+        this.nullable = nullable;
+        this.argumentDefinitions = ImmutableList.copyOf(requireNonNull(argumentDefinitions, "argumentDefinitions is null"));
         this.hidden = hidden;
         this.deterministic = deterministic;
         this.description = requireNonNull(description, "description is null");
+        this.kind = requireNonNull(kind, "kind is null");
     }
 
     public FunctionId getFunctionId()
@@ -45,6 +70,16 @@ public class FunctionMetadata
     public Signature getSignature()
     {
         return signature;
+    }
+
+    public boolean isNullable()
+    {
+        return nullable;
+    }
+
+    public List<FunctionArgumentDefinition> getArgumentDefinitions()
+    {
+        return argumentDefinitions;
     }
 
     public boolean isHidden()
@@ -60,6 +95,11 @@ public class FunctionMetadata
     public String getDescription()
     {
         return description;
+    }
+
+    public FunctionKind getKind()
+    {
+        return kind;
     }
 
     @Override

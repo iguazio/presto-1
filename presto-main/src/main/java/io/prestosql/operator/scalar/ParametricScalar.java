@@ -25,6 +25,7 @@ import io.prestosql.spi.PrestoException;
 
 import java.util.Optional;
 
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.SignatureBinder.applyBoundVariables;
 import static io.prestosql.spi.StandardErrorCode.AMBIGUOUS_FUNCTION_IMPLEMENTATION;
 import static io.prestosql.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_ERROR;
@@ -46,9 +47,12 @@ public class ParametricScalar
     {
         super(new FunctionMetadata(
                 signature,
+                implementations.isNullable(),
+                implementations.getArgumentDefinitions(),
                 details.isHidden(),
                 details.isDeterministic(),
-                details.getDescription().orElse("")));
+                details.getDescription().orElse(""),
+                SCALAR));
         this.details = requireNonNull(details);
         this.implementations = requireNonNull(implementations);
     }

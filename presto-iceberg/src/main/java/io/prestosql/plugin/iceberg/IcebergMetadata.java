@@ -95,8 +95,8 @@ import static io.prestosql.plugin.iceberg.IcebergUtil.isIcebergTable;
 import static io.prestosql.plugin.iceberg.PartitionFields.parsePartitionFields;
 import static io.prestosql.plugin.iceberg.PartitionFields.toPartitionFields;
 import static io.prestosql.plugin.iceberg.TableType.DATA;
-import static io.prestosql.plugin.iceberg.TypeConveter.toIcebergType;
-import static io.prestosql.plugin.iceberg.TypeConveter.toPrestoType;
+import static io.prestosql.plugin.iceberg.TypeConverter.toIcebergType;
+import static io.prestosql.plugin.iceberg.TypeConverter.toPrestoType;
 import static io.prestosql.spi.StandardErrorCode.INVALID_SCHEMA_PROPERTY;
 import static io.prestosql.spi.StandardErrorCode.NOT_SUPPORTED;
 import static io.prestosql.spi.StandardErrorCode.SCHEMA_NOT_EMPTY;
@@ -171,6 +171,8 @@ public class IcebergMetadata
                 return Optional.of(new PartitionTable(table, typeManager, icebergTable));
             case HISTORY:
                 return Optional.of(new HistoryTable(table.getSchemaTableNameWithType(), icebergTable));
+            case SNAPSHOTS:
+                return Optional.of(new SnapshotsTable(table.getSchemaTableNameWithType(), typeManager, icebergTable));
         }
         return Optional.empty();
     }
@@ -213,10 +215,11 @@ public class IcebergMetadata
     public ColumnMetadata getColumnMetadata(ConnectorSession session, ConnectorTableHandle tableHandle, ColumnHandle columnHandle)
     {
         IcebergColumnHandle column = (IcebergColumnHandle) columnHandle;
-        if (column.getComment().isPresent()) {
-            return new ColumnMetadata(column.getName(), column.getType(), column.getComment().get());
-        }
-        return new ColumnMetadata(column.getName(), column.getType());
+        return ColumnMetadata.builder()
+                .setName(column.getName())
+                .setType(column.getType())
+                .setComment(column.getComment())
+                .build();
     }
 
     @Override
@@ -471,10 +474,11 @@ public class IcebergMetadata
     {
         return table.schema().columns().stream()
                 .map(column -> {
-                    if (column.doc() != null) {
-                        return new ColumnMetadata(column.name(), toPrestoType(column.type(), typeManager), column.doc());
-                    }
-                    return new ColumnMetadata(column.name(), toPrestoType(column.type(), typeManager));
+                    return ColumnMetadata.builder()
+                            .setName(column.name())
+                            .setType(toPrestoType(column.type(), typeManager))
+                            .setComment(Optional.ofNullable(column.doc()))
+                            .build();
                 })
                 .collect(toImmutableList());
     }

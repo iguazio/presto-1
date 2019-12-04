@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.annotation.UsedByGeneratedCode;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -80,18 +81,23 @@ public abstract class AbstractMinMaxAggregationFunction
 
     protected AbstractMinMaxAggregationFunction(String name, boolean min, String description)
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        name,
-                        AGGREGATE,
-                        ImmutableList.of(orderableTypeParameter("E")),
-                        ImmutableList.of(),
-                        new TypeSignature("E"),
-                        ImmutableList.of(new TypeSignature("E")),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                name,
+                                ImmutableList.of(orderableTypeParameter("E")),
+                                ImmutableList.of(),
+                                new TypeSignature("E"),
+                                ImmutableList.of(new TypeSignature("E")),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        description,
+                        AGGREGATE),
                 true,
-                description));
+                false);
         this.min = min;
         this.operatorType = min ? LESS_THAN : GREATER_THAN;
     }

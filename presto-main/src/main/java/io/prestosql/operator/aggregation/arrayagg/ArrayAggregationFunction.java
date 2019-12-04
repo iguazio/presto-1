@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation.arrayagg;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -61,18 +62,23 @@ public class ArrayAggregationFunction
 
     public ArrayAggregationFunction(ArrayAggGroupImplementation groupMode)
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(typeVariable("T")),
-                        ImmutableList.of(),
-                        TypeSignature.arrayType(new TypeSignature("T")),
-                        ImmutableList.of(new TypeSignature("T")),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(typeVariable("T")),
+                                ImmutableList.of(),
+                                TypeSignature.arrayType(new TypeSignature("T")),
+                                ImmutableList.of(new TypeSignature("T")),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(true)),
+                        false,
+                        true,
+                        "return an array of values",
+                        AGGREGATE),
                 true,
-                "return an array of values"));
+                true);
         this.groupMode = requireNonNull(groupMode, "groupMode is null");
     }
 

@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -64,18 +65,25 @@ public abstract class AbstractMinMaxNAggregationFunction
 
     protected AbstractMinMaxNAggregationFunction(String name, Function<Type, BlockComparator> typeToComparator, String description)
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        name,
-                        AGGREGATE,
-                        ImmutableList.of(orderableTypeParameter("E")),
-                        ImmutableList.of(),
-                        TypeSignature.arrayType(new TypeSignature("E")),
-                        ImmutableList.of(new TypeSignature("E"), BIGINT.getTypeSignature()),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                name,
+                                ImmutableList.of(orderableTypeParameter("E")),
+                                ImmutableList.of(),
+                                TypeSignature.arrayType(new TypeSignature("E")),
+                                ImmutableList.of(new TypeSignature("E"), BIGINT.getTypeSignature()),
+                                false),
+                        true,
+                        ImmutableList.of(
+                                new FunctionArgumentDefinition(false),
+                                new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        description,
+                        AGGREGATE),
                 true,
-                description));
+                false);
         requireNonNull(typeToComparator);
         this.typeToComparator = typeToComparator;
     }

@@ -15,7 +15,7 @@ package io.prestosql.operator.scalar;
 
 import com.google.common.collect.ImmutableList;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -35,6 +35,7 @@ import java.lang.invoke.MethodHandle;
 import java.util.Optional;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.typeVariable;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.functionTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
@@ -58,7 +59,6 @@ public final class MapZipWithFunction
         super(new FunctionMetadata(
                 new Signature(
                         "map_zip_with",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(typeVariable("K"), typeVariable("V1"), typeVariable("V2"), typeVariable("V3")),
                         ImmutableList.of(),
                         mapType(new TypeSignature("K"), new TypeSignature("V3")),
@@ -68,8 +68,14 @@ public final class MapZipWithFunction
                                 functionType(new TypeSignature("K"), new TypeSignature("V1"), new TypeSignature("V2"), new TypeSignature("V3"))),
                         false),
                 false,
+                ImmutableList.of(
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(false),
+                        new FunctionArgumentDefinition(false)),
                 false,
-                "merge two maps into a single map by applying the lambda function to the pair of values with the same key"));
+                false,
+                "merge two maps into a single map by applying the lambda function to the pair of values with the same key",
+                SCALAR));
     }
 
     @Override

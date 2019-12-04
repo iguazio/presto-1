@@ -124,9 +124,12 @@ import static io.prestosql.spi.function.OperatorType.EQUAL;
 import static io.prestosql.spi.function.OperatorType.GREATER_THAN;
 import static io.prestosql.spi.function.OperatorType.GREATER_THAN_OR_EQUAL;
 import static io.prestosql.spi.function.OperatorType.HASH_CODE;
+import static io.prestosql.spi.function.OperatorType.INDETERMINATE;
+import static io.prestosql.spi.function.OperatorType.IS_DISTINCT_FROM;
 import static io.prestosql.spi.function.OperatorType.LESS_THAN;
 import static io.prestosql.spi.function.OperatorType.LESS_THAN_OR_EQUAL;
 import static io.prestosql.spi.function.OperatorType.NOT_EQUAL;
+import static io.prestosql.spi.function.OperatorType.XX_HASH_64;
 import static io.prestosql.spi.type.BigintType.BIGINT;
 import static io.prestosql.spi.type.BooleanType.BOOLEAN;
 import static io.prestosql.transaction.InMemoryTransactionManager.createTestTransactionManager;
@@ -152,7 +155,8 @@ public final class MetadataManager
     private final ConcurrentMap<String, Collection<ConnectorMetadata>> catalogsByQueryId = new ConcurrentHashMap<>();
 
     @Inject
-    public MetadataManager(FeaturesConfig featuresConfig,
+    public MetadataManager(
+            FeaturesConfig featuresConfig,
             SessionPropertyManager sessionPropertyManager,
             SchemaPropertyManager schemaPropertyManager,
             TablePropertyManager tablePropertyManager,
@@ -1044,6 +1048,7 @@ public final class MetadataManager
                         result.getRemainingFilter()));
     }
 
+    @Override
     public Optional<ProjectionApplicationResult<TableHandle>> applyProjection(Session session, TableHandle table, List<ConnectorExpression> projections, Map<String, ColumnHandle> assignments)
     {
         CatalogName catalogName = table.getCatalogName();
@@ -1252,14 +1257,20 @@ public final class MetadataManager
         Multimap<Type, OperatorType> missingOperators = HashMultimap.create();
         for (Type type : typeRegistry.getTypes()) {
             if (type.isComparable()) {
-                if (!functions.canResolveOperator(HASH_CODE, BIGINT, ImmutableList.of(type))) {
-                    missingOperators.put(type, HASH_CODE);
+                for (OperatorType operator : ImmutableList.of(HASH_CODE, XX_HASH_64)) {
+                    if (!functions.canResolveOperator(operator, BIGINT, ImmutableList.of(type))) {
+                        missingOperators.put(type, operator);
+                    }
                 }
-                if (!functions.canResolveOperator(EQUAL, BOOLEAN, ImmutableList.of(type, type))) {
-                    missingOperators.put(type, EQUAL);
+                for (OperatorType operator : ImmutableList.of(INDETERMINATE)) {
+                    if (!functions.canResolveOperator(operator, BOOLEAN, ImmutableList.of(type))) {
+                        missingOperators.put(type, operator);
+                    }
                 }
-                if (!functions.canResolveOperator(NOT_EQUAL, BOOLEAN, ImmutableList.of(type, type))) {
-                    missingOperators.put(type, NOT_EQUAL);
+                for (OperatorType operator : ImmutableList.of(EQUAL, NOT_EQUAL, IS_DISTINCT_FROM)) {
+                    if (!functions.canResolveOperator(operator, BOOLEAN, ImmutableList.of(type, type))) {
+                        missingOperators.put(type, operator);
+                    }
                 }
             }
             if (type.isOrderable()) {
@@ -1341,6 +1352,12 @@ public final class MetadataManager
     public FunctionMetadata getFunctionMetadata(ResolvedFunction resolvedFunction)
     {
         return functions.getFunctionMetadata(resolvedFunction);
+    }
+
+    @Override
+    public AggregationFunctionMetadata getAggregationFunctionMetadata(ResolvedFunction resolvedFunction)
+    {
+        return functions.getAggregationFunctionMetadata(resolvedFunction);
     }
 
     @Override

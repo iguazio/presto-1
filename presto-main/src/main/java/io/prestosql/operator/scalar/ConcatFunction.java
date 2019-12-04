@@ -27,7 +27,7 @@ import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 import io.prestosql.annotation.UsedByGeneratedCode;
 import io.prestosql.metadata.BoundVariables;
-import io.prestosql.metadata.FunctionKind;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -50,6 +50,7 @@ import static io.airlift.bytecode.ParameterizedType.type;
 import static io.airlift.bytecode.expression.BytecodeExpressions.add;
 import static io.airlift.bytecode.expression.BytecodeExpressions.constantInt;
 import static io.airlift.bytecode.expression.BytecodeExpressions.invokeStatic;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.ArgumentProperty.valueTypeArgumentProperty;
 import static io.prestosql.operator.scalar.ScalarFunctionImplementation.NullConvention.RETURN_NULL_ON_NULL;
 import static io.prestosql.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
@@ -76,15 +77,17 @@ public final class ConcatFunction
         super(new FunctionMetadata(
                 new Signature(
                         "concat",
-                        FunctionKind.SCALAR,
                         ImmutableList.of(),
                         ImmutableList.of(),
                         type,
                         ImmutableList.of(type),
                         true),
                 false,
+                ImmutableList.of(new FunctionArgumentDefinition(false)),
+                false,
                 true,
-                description));
+                description,
+                SCALAR));
     }
 
     @Override

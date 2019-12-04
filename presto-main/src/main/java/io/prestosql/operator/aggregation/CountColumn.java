@@ -16,6 +16,7 @@ package io.prestosql.operator.aggregation;
 import com.google.common.collect.ImmutableList;
 import io.airlift.bytecode.DynamicClassLoader;
 import io.prestosql.metadata.BoundVariables;
+import io.prestosql.metadata.FunctionArgumentDefinition;
 import io.prestosql.metadata.FunctionMetadata;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.Signature;
@@ -57,18 +58,23 @@ public class CountColumn
 
     public CountColumn()
     {
-        super(new FunctionMetadata(
-                new Signature(
-                        NAME,
-                        AGGREGATE,
-                        ImmutableList.of(typeVariable("T")),
-                        ImmutableList.of(),
-                        BIGINT.getTypeSignature(),
-                        ImmutableList.of(new TypeSignature("T")),
-                        false),
-                false,
+        super(
+                new FunctionMetadata(
+                        new Signature(
+                                NAME,
+                                ImmutableList.of(typeVariable("T")),
+                                ImmutableList.of(),
+                                BIGINT.getTypeSignature(),
+                                ImmutableList.of(new TypeSignature("T")),
+                                false),
+                        true,
+                        ImmutableList.of(new FunctionArgumentDefinition(false)),
+                        false,
+                        true,
+                        "Counts the non-null values",
+                        AGGREGATE),
                 true,
-                "Counts the non-null values"));
+                false);
     }
 
     @Override

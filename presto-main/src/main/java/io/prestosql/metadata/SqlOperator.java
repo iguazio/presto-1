@@ -18,7 +18,15 @@ import io.prestosql.spi.type.TypeSignature;
 
 import java.util.List;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static io.prestosql.metadata.FunctionKind.SCALAR;
 import static io.prestosql.metadata.Signature.mangleOperatorName;
+import static io.prestosql.spi.function.OperatorType.EQUAL;
+import static io.prestosql.spi.function.OperatorType.INDETERMINATE;
+import static io.prestosql.spi.function.OperatorType.IS_DISTINCT_FROM;
+import static io.prestosql.spi.function.OperatorType.NOT_EQUAL;
+import static io.prestosql.spi.function.OperatorType.SUBSCRIPT;
+import static java.util.Collections.nCopies;
 
 public abstract class SqlOperator
         extends SqlScalarFunction
@@ -28,20 +36,26 @@ public abstract class SqlOperator
             List<TypeVariableConstraint> typeVariableConstraints,
             List<LongVariableConstraint> longVariableConstraints,
             TypeSignature returnType,
-            List<TypeSignature> argumentTypes)
+            List<TypeSignature> argumentTypes,
+            boolean nullable)
     {
         // TODO This should take Signature!
         super(new FunctionMetadata(
                 new Signature(
                         mangleOperatorName(operatorType),
-                        FunctionKind.SCALAR,
                         typeVariableConstraints,
                         longVariableConstraints,
                         returnType,
                         argumentTypes,
                         false),
+                nullable,
+                nCopies(argumentTypes.size(), new FunctionArgumentDefinition(operatorType == IS_DISTINCT_FROM || operatorType == INDETERMINATE)),
                 true,
                 true,
-                ""));
+                "",
+                SCALAR));
+        if (operatorType == EQUAL || operatorType == NOT_EQUAL || operatorType == SUBSCRIPT) {
+            checkArgument(nullable, "%s operator for %s must be nullable", operatorType, argumentTypes.get(0));
+        }
     }
 }

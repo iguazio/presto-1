@@ -324,7 +324,7 @@ public class SemiTransactionalHiveMetastore
     }
 
     // For HiveBasicStatistics, we only overwrite the original statistics if the new one is not empty.
-    // For HiveColumnStatistics, we always overwrite every statistics.
+    // For HiveColumnStatistics, only overwrite the original statistics for columns present in the new ones and preserve the others.
     // TODO: Collect file count, on-disk size and in-memory size during ANALYZE
     private PartitionStatistics updatePartitionStatistics(PartitionStatistics oldPartitionStats, PartitionStatistics newPartitionStats)
     {
@@ -335,7 +335,16 @@ public class SemiTransactionalHiveMetastore
                 firstPresent(newBasicStatistics.getRowCount(), oldBasicStatistics.getRowCount()),
                 firstPresent(newBasicStatistics.getInMemoryDataSizeInBytes(), oldBasicStatistics.getInMemoryDataSizeInBytes()),
                 firstPresent(newBasicStatistics.getOnDiskDataSizeInBytes(), oldBasicStatistics.getOnDiskDataSizeInBytes()));
-        return new PartitionStatistics(updatedBasicStatistics, newPartitionStats.getColumnStatistics());
+        Map<String, HiveColumnStatistics> updatedColumnStatistics =
+                updateColumnStatistics(oldPartitionStats.getColumnStatistics(), newPartitionStats.getColumnStatistics());
+        return new PartitionStatistics(updatedBasicStatistics, updatedColumnStatistics);
+    }
+
+    private Map<String, HiveColumnStatistics> updateColumnStatistics(Map<String, HiveColumnStatistics> oldColumnStats, Map<String, HiveColumnStatistics> newColumnStats)
+    {
+        Map<String, HiveColumnStatistics> result = new HashMap<>(oldColumnStats);
+        result.putAll(newColumnStats);
+        return ImmutableMap.copyOf(result);
     }
 
     private static OptionalLong firstPresent(OptionalLong first, OptionalLong second)
@@ -452,8 +461,7 @@ public class SemiTransactionalHiveMetastore
         SchemaTableName schemaTableName = new SchemaTableName(databaseName, tableName);
         Action<TableAndMore> oldTableAction = tableActions.get(schemaTableName);
         if (oldTableAction == null) {
-            Table table = delegate.getTable(identity, databaseName, tableName)
-                    .orElseThrow(() -> new TableNotFoundException(schemaTableName));
+            Table table = getExistingTable(identity, schemaTableName.getSchemaName(), schemaTableName.getTableName());
             PartitionStatistics currentStatistics = getTableStatistics(identity, databaseName, tableName);
             HdfsContext hdfsContext = new HdfsContext(session, databaseName, tableName);
             tableActions.put(
@@ -608,25 +616,6 @@ public class SemiTransactionalHiveMetastore
             }
         }
         return true;
-    }
-
-    public synchronized Optional<Partition> getPartition(HiveIdentity identity, String databaseName, String tableName, List<String> partitionValues)
-    {
-        checkReadable();
-        TableSource tableSource = getTableSource(databaseName, tableName);
-        Map<List<String>, Action<PartitionAndMore>> partitionActionsOfTable = partitionActions.computeIfAbsent(new SchemaTableName(databaseName, tableName), k -> new HashMap<>());
-        Action<PartitionAndMore> partitionAction = partitionActionsOfTable.get(partitionValues);
-        if (partitionAction != null) {
-            return getPartitionFromPartitionAction(partitionAction);
-        }
-        switch (tableSource) {
-            case PRE_EXISTING_TABLE:
-                return delegate.getPartition(identity, databaseName, tableName, partitionValues);
-            case CREATED_IN_THIS_TRANSACTION:
-                return Optional.empty();
-            default:
-                throw new UnsupportedOperationException("unknown table source");
-        }
     }
 
     public synchronized Map<String, Optional<Partition>> getPartitionsByNames(HiveIdentity identity, String databaseName, String tableName, List<String> partitionNames)
@@ -835,7 +824,7 @@ public class SemiTransactionalHiveMetastore
         return delegate.listRoleGrants(principal);
     }
 
-    public synchronized Set<HivePrivilegeInfo> listTablePrivileges(HiveIdentity identity, String databaseName, String tableName, HivePrincipal principal)
+    public synchronized Set<HivePrivilegeInfo> listTablePrivileges(HiveIdentity identity, String databaseName, String tableName, Optional<HivePrincipal> principal)
     {
         checkReadable();
         SchemaTableName schemaTableName = new SchemaTableName(databaseName, tableName);
@@ -846,16 +835,17 @@ public class SemiTransactionalHiveMetastore
         switch (tableAction.getType()) {
             case ADD:
             case ALTER:
-                if (principal.getType() == PrincipalType.ROLE) {
+                if (principal.isPresent() && principal.get().getType() == PrincipalType.ROLE) {
                     return ImmutableSet.of();
                 }
-                if (!principal.getName().equals(tableAction.getData().getTable().getOwner())) {
+                String owner = tableAction.getData().getTable().getOwner();
+                if (principal.isPresent() && !principal.get().getName().equals(owner)) {
                     return ImmutableSet.of();
                 }
-                Collection<HivePrivilegeInfo> privileges = tableAction.getData().getPrincipalPrivileges().getUserPrivileges().get(principal.getName());
+                Collection<HivePrivilegeInfo> privileges = tableAction.getData().getPrincipalPrivileges().getUserPrivileges().get(owner);
                 return ImmutableSet.<HivePrivilegeInfo>builder()
                         .addAll(privileges)
-                        .add(new HivePrivilegeInfo(OWNERSHIP, true, new HivePrincipal(USER, principal.getName()), new HivePrincipal(USER, principal.getName())))
+                        .add(new HivePrivilegeInfo(OWNERSHIP, true, new HivePrincipal(USER, owner), new HivePrincipal(USER, owner)))
                         .build();
             case INSERT_EXISTING:
                 return delegate.listTablePrivileges(databaseName, tableName, getTableOwner(identity, databaseName, tableName), principal);
@@ -868,9 +858,13 @@ public class SemiTransactionalHiveMetastore
 
     private String getTableOwner(HiveIdentity identity, String databaseName, String tableName)
     {
-        Table table = delegate.getTable(identity, databaseName, tableName)
+        return getExistingTable(identity, databaseName, tableName).getOwner();
+    }
+
+    private Table getExistingTable(HiveIdentity identity, String databaseName, String tableName)
+    {
+        return delegate.getTable(identity, databaseName, tableName)
                 .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
-        return table.getOwner();
     }
 
     public synchronized void grantTablePrivileges(HiveIdentity identity, String databaseName, String tableName, HivePrincipal grantee, Set<HivePrivilegeInfo> privileges)

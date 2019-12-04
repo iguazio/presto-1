@@ -19,12 +19,14 @@ import com.google.common.util.concurrent.SettableFuture;
 import io.airlift.log.Logger;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
+import io.prestosql.execution.Lifespan;
 import io.prestosql.memory.context.AggregatedMemoryContext;
 import io.prestosql.memory.context.LocalMemoryContext;
 import io.prestosql.memory.context.MemoryTrackingContext;
 import io.prestosql.metadata.Split;
 import io.prestosql.operator.OperationTimer.OperationTiming;
 import io.prestosql.operator.WorkProcessor.ProcessState;
+import io.prestosql.operator.WorkProcessorOperatorAdapter.ProcessorContext;
 import io.prestosql.spi.Page;
 import io.prestosql.spi.connector.UpdatablePageSource;
 import io.prestosql.sql.planner.plan.PlanNodeId;
@@ -143,9 +145,7 @@ public class WorkProcessorPipelineSourceOperator
             MemoryTrackingContext operatorMemoryTrackingContext = createMemoryTrackingContext(operatorContext, operatorIndex);
             operatorMemoryTrackingContext.initializeLocalMemoryContexts(operatorFactory.getOperatorType());
             WorkProcessorOperator operator = operatorFactory.create(
-                    operatorContext.getSession(),
-                    operatorMemoryTrackingContext,
-                    operatorContext.getDriverContext().getYieldSignal(),
+                    new ProcessorContext(operatorContext.getSession(), operatorMemoryTrackingContext, operatorContext),
                     pages);
             workProcessorOperatorContexts.add(new WorkProcessorOperatorContext(
                     operator,
@@ -714,7 +714,14 @@ public class WorkProcessorPipelineSourceOperator
         @Override
         public void noMoreOperators()
         {
+            this.operatorFactories.forEach(WorkProcessorOperatorFactory::close);
             closed = true;
+        }
+
+        @Override
+        public void noMoreOperators(Lifespan lifespan)
+        {
+            this.operatorFactories.forEach(operatorFactory -> operatorFactory.lifespanFinished(lifespan));
         }
     }
 }

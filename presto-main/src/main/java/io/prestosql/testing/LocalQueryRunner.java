@@ -108,7 +108,7 @@ import io.prestosql.spi.PageIndexerFactory;
 import io.prestosql.spi.PageSorter;
 import io.prestosql.spi.Plugin;
 import io.prestosql.spi.connector.ConnectorFactory;
-import io.prestosql.spi.type.Type;
+import io.prestosql.spi.session.PropertyMetadata;
 import io.prestosql.spiller.FileSingleStreamSpillerFactory;
 import io.prestosql.spiller.GenericPartitioningSpillerFactory;
 import io.prestosql.spiller.GenericSpillerFactory;
@@ -199,6 +199,7 @@ import static io.prestosql.spi.connector.ConnectorSplitManager.SplitSchedulingSt
 import static io.prestosql.spi.connector.NotPartitionedPartitionHandle.NOT_PARTITIONED;
 import static io.prestosql.sql.ParameterUtils.parameterExtractor;
 import static io.prestosql.sql.ParsingUtil.createParsingOptions;
+import static io.prestosql.sql.planner.LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED;
 import static io.prestosql.sql.planner.optimizations.PlanNodeSearcher.searchFrom;
 import static io.prestosql.sql.testing.TreeAssertions.assertFormattedSql;
 import static io.prestosql.testing.TestingSession.TESTING_CATALOG;
@@ -250,6 +251,7 @@ public class LocalQueryRunner
     private final NodeSpillConfig nodeSpillConfig;
     private final NodeSchedulerConfig nodeSchedulerConfig;
     private final FeaturesConfig featuresConfig;
+    private final Map<String, List<PropertyMetadata<?>>> defaultSessionProperties;
     private boolean printPlan;
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
@@ -259,6 +261,11 @@ public class LocalQueryRunner
         this(defaultSession, new FeaturesConfig(), new NodeSpillConfig(), false, false);
     }
 
+    public LocalQueryRunner(Session defaultSession, Map<String, List<PropertyMetadata<?>>> defaultSessionProperties)
+    {
+        this(defaultSession, new FeaturesConfig(), new NodeSpillConfig(), false, false, defaultSessionProperties);
+    }
+
     public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig)
     {
         this(defaultSession, featuresConfig, new NodeSpillConfig(), false, false);
@@ -266,15 +273,21 @@ public class LocalQueryRunner
 
     public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory)
     {
-        this(defaultSession, featuresConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1);
+        this(defaultSession, featuresConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, ImmutableMap.of());
     }
 
-    private LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, int nodeCountForStats)
+    public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, Map<String, List<PropertyMetadata<?>>> defaultSessionProperties)
+    {
+        this(defaultSession, featuresConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, defaultSessionProperties);
+    }
+
+    private LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, int nodeCountForStats, Map<String, List<PropertyMetadata<?>>> defaultSessionProperties)
     {
         requireNonNull(defaultSession, "defaultSession is null");
         checkArgument(!defaultSession.getTransactionId().isPresent() || !withInitialTransaction, "Already in transaction");
 
         this.taskManagerConfig = new TaskManagerConfig().setTaskConcurrency(4);
+        this.defaultSessionProperties = requireNonNull(defaultSessionProperties, "defaultSessionProperties is null");
         this.nodeSpillConfig = requireNonNull(nodeSpillConfig, "nodeSpillConfig is null");
         this.alwaysRevokeMemory = alwaysRevokeMemory;
         this.notificationExecutor = newCachedThreadPool(daemonThreadsNamed("local-query-runner-executor-%s"));
@@ -366,6 +379,7 @@ public class LocalQueryRunner
 
         // add bogus connector for testing session properties
         catalogManager.registerCatalog(createBogusTestingCatalog(TESTING_CATALOG));
+        metadata.getSessionPropertyManager().addConnectorSessionProperties(new CatalogName(TESTING_CATALOG), this.defaultSessionProperties.getOrDefault(TESTING_CATALOG, ImmutableList.of()));
 
         // rewrite session to use managed SessionPropertyMetadata
         this.defaultSession = new Session(
@@ -425,7 +439,7 @@ public class LocalQueryRunner
 
     public static LocalQueryRunner queryRunnerWithFakeNodeCountForStats(Session defaultSession, int nodeCount)
     {
-        return new LocalQueryRunner(defaultSession, new FeaturesConfig(), new NodeSpillConfig(), false, false, nodeCount);
+        return new LocalQueryRunner(defaultSession, new FeaturesConfig(), new NodeSpillConfig(), false, false, nodeCount, ImmutableMap.of());
     }
 
     @Override
@@ -442,11 +456,6 @@ public class LocalQueryRunner
     public int getNodeCount()
     {
         return 1;
-    }
-
-    public void addType(Type type)
-    {
-        metadata.addType(type);
     }
 
     @Override
@@ -472,11 +481,13 @@ public class LocalQueryRunner
         return nodePartitioningManager;
     }
 
+    @Override
     public PageSourceManager getPageSourceManager()
     {
         return pageSourceManager;
     }
 
+    @Override
     public SplitManager getSplitManager()
     {
         return splitManager;
@@ -787,7 +798,7 @@ public class LocalQueryRunner
     @Override
     public Plan createPlan(Session session, @Language("SQL") String sql, WarningCollector warningCollector)
     {
-        return createPlan(session, sql, LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED, warningCollector);
+        return createPlan(session, sql, OPTIMIZED_AND_VALIDATED, warningCollector);
     }
 
     public Plan createPlan(Session session, @Language("SQL") String sql, LogicalPlanner.Stage stage, WarningCollector warningCollector)
@@ -823,7 +834,7 @@ public class LocalQueryRunner
 
     public Plan createPlan(Session session, @Language("SQL") String sql, List<PlanOptimizer> optimizers, WarningCollector warningCollector)
     {
-        return createPlan(session, sql, optimizers, LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED, warningCollector);
+        return createPlan(session, sql, optimizers, OPTIMIZED_AND_VALIDATED, warningCollector);
     }
 
     public Plan createPlan(Session session, @Language("SQL") String sql, List<PlanOptimizer> optimizers, LogicalPlanner.Stage stage, WarningCollector warningCollector)
@@ -848,6 +859,7 @@ public class LocalQueryRunner
         LogicalPlanner logicalPlanner = new LogicalPlanner(session, optimizers, new PlanSanityChecker(true), idAllocator, metadata, new TypeAnalyzer(sqlParser, metadata), statsCalculator, costCalculator, warningCollector);
 
         Analysis analysis = analyzer.analyze(preparedQuery.getStatement());
+        // make LocalQueryRunner always compute plan statistics for test purposes
         return logicalPlanner.plan(analysis, stage);
     }
 

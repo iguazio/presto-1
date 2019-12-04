@@ -194,6 +194,7 @@ import java.util.Optional;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getOnlyElement;
+import static io.prestosql.sql.QueryUtil.query;
 import static io.prestosql.sql.parser.SqlBaseParser.TIME;
 import static io.prestosql.sql.parser.SqlBaseParser.TIMESTAMP;
 import static java.lang.String.format;
@@ -842,6 +843,8 @@ class AstBuilder
     {
         return new ShowCatalogs(getLocation(context),
                 getTextIfPresent(context.pattern)
+                        .map(AstBuilder::unquote),
+                getTextIfPresent(context.escape)
                         .map(AstBuilder::unquote));
     }
 
@@ -861,8 +864,7 @@ class AstBuilder
     public Node visitShowStatsForQuery(SqlBaseParser.ShowStatsForQueryContext context)
     {
         QuerySpecification specification = (QuerySpecification) visitQuerySpecification(context.querySpecification());
-        Query query = new Query(Optional.empty(), specification, Optional.empty(), Optional.empty(), Optional.empty());
-        return new ShowStats(Optional.of(getLocation(context)), new TableSubquery(query));
+        return new ShowStats(Optional.of(getLocation(context)), new TableSubquery(query(specification)));
     }
 
     @Override
@@ -874,13 +876,21 @@ class AstBuilder
     @Override
     public Node visitShowFunctions(SqlBaseParser.ShowFunctionsContext context)
     {
-        return new ShowFunctions(getLocation(context));
+        return new ShowFunctions(getLocation(context),
+                getTextIfPresent(context.pattern)
+                        .map(AstBuilder::unquote),
+                getTextIfPresent(context.escape)
+                        .map(AstBuilder::unquote));
     }
 
     @Override
     public Node visitShowSession(SqlBaseParser.ShowSessionContext context)
     {
-        return new ShowSession(getLocation(context));
+        return new ShowSession(getLocation(context),
+                getTextIfPresent(context.pattern)
+                        .map(AstBuilder::unquote),
+                getTextIfPresent(context.escape)
+                        .map(AstBuilder::unquote));
     }
 
     @Override

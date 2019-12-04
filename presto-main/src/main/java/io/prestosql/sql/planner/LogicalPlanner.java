@@ -85,11 +85,14 @@ import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.Streams.zip;
+import static io.prestosql.SystemSessionProperties.isCollectPlanStatisticsForAllQueries;
 import static io.prestosql.spi.StandardErrorCode.NOT_SUPPORTED;
 import static io.prestosql.spi.statistics.TableStatisticType.ROW_COUNT;
 import static io.prestosql.spi.type.BigintType.BIGINT;
 import static io.prestosql.spi.type.VarbinaryType.VARBINARY;
 import static io.prestosql.sql.analyzer.TypeSignatureTranslator.toSqlType;
+import static io.prestosql.sql.planner.LogicalPlanner.Stage.OPTIMIZED;
+import static io.prestosql.sql.planner.LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED;
 import static io.prestosql.sql.planner.plan.AggregationNode.singleGroupingSet;
 import static io.prestosql.sql.planner.plan.TableWriterNode.CreateReference;
 import static io.prestosql.sql.planner.plan.TableWriterNode.InsertReference;
@@ -119,7 +122,8 @@ public class LogicalPlanner
     private final CostCalculator costCalculator;
     private final WarningCollector warningCollector;
 
-    public LogicalPlanner(Session session,
+    public LogicalPlanner(
+            Session session,
             List<PlanOptimizer> planOptimizers,
             PlanNodeIdAllocator idAllocator,
             Metadata metadata,
@@ -131,7 +135,8 @@ public class LogicalPlanner
         this(session, planOptimizers, DISTRIBUTED_PLAN_SANITY_CHECKER, idAllocator, metadata, typeAnalyzer, statsCalculator, costCalculator, warningCollector);
     }
 
-    public LogicalPlanner(Session session,
+    public LogicalPlanner(
+            Session session,
             List<PlanOptimizer> planOptimizers,
             PlanSanityChecker planSanityChecker,
             PlanNodeIdAllocator idAllocator,
@@ -156,31 +161,41 @@ public class LogicalPlanner
 
     public Plan plan(Analysis analysis)
     {
-        return plan(analysis, Stage.OPTIMIZED_AND_VALIDATED);
+        return plan(analysis, OPTIMIZED_AND_VALIDATED);
     }
 
     public Plan plan(Analysis analysis, Stage stage)
+    {
+        return plan(analysis, stage, analysis.getStatement() instanceof Explain || isCollectPlanStatisticsForAllQueries(session));
+    }
+
+    public Plan plan(Analysis analysis, Stage stage, boolean collectPlanStatistics)
     {
         PlanNode root = planStatement(analysis, analysis.getStatement());
 
         planSanityChecker.validateIntermediatePlan(root, session, metadata, typeAnalyzer, symbolAllocator.getTypes(), warningCollector);
 
-        if (stage.ordinal() >= Stage.OPTIMIZED.ordinal()) {
+        if (stage.ordinal() >= OPTIMIZED.ordinal()) {
             for (PlanOptimizer optimizer : planOptimizers) {
                 root = optimizer.optimize(root, session, symbolAllocator.getTypes(), symbolAllocator, idAllocator, warningCollector);
                 requireNonNull(root, format("%s returned a null plan", optimizer.getClass().getName()));
             }
         }
 
-        if (stage.ordinal() >= Stage.OPTIMIZED_AND_VALIDATED.ordinal()) {
+        if (stage.ordinal() >= OPTIMIZED_AND_VALIDATED.ordinal()) {
             // make sure we produce a valid plan after optimizations run. This is mainly to catch programming errors
             planSanityChecker.validateFinalPlan(root, session, metadata, typeAnalyzer, symbolAllocator.getTypes(), warningCollector);
         }
 
         TypeProvider types = symbolAllocator.getTypes();
-        StatsProvider statsProvider = new CachingStatsProvider(statsCalculator, session, types);
-        CostProvider costProvider = new CachingCostProvider(costCalculator, statsProvider, Optional.empty(), session, types);
-        return new Plan(root, types, StatsAndCosts.create(root, statsProvider, costProvider));
+
+        StatsAndCosts statsAndCosts = StatsAndCosts.empty();
+        if (collectPlanStatistics) {
+            StatsProvider statsProvider = new CachingStatsProvider(statsCalculator, session, types);
+            CostProvider costProvider = new CachingCostProvider(costCalculator, statsProvider, Optional.empty(), session, types);
+            statsAndCosts = StatsAndCosts.create(root, statsProvider, costProvider);
+        }
+        return new Plan(root, types, statsAndCosts);
     }
 
     public PlanNode planStatement(Analysis analysis, Statement statement)
@@ -201,25 +216,23 @@ public class LogicalPlanner
             }
             return createTableCreationPlan(analysis, ((CreateTableAsSelect) statement).getQuery());
         }
-        else if (statement instanceof Analyze) {
+        if (statement instanceof Analyze) {
             return createAnalyzePlan(analysis, (Analyze) statement);
         }
-        else if (statement instanceof Insert) {
+        if (statement instanceof Insert) {
             checkState(analysis.getInsert().isPresent(), "Insert handle is missing");
             return createInsertPlan(analysis, (Insert) statement);
         }
-        else if (statement instanceof Delete) {
+        if (statement instanceof Delete) {
             return createDeletePlan(analysis, (Delete) statement);
         }
-        else if (statement instanceof Query) {
+        if (statement instanceof Query) {
             return createRelationPlan(analysis, (Query) statement);
         }
-        else if (statement instanceof Explain && ((Explain) statement).isAnalyze()) {
+        if (statement instanceof Explain && ((Explain) statement).isAnalyze()) {
             return createExplainAnalyzePlan(analysis, (Explain) statement);
         }
-        else {
-            throw new PrestoException(NOT_SUPPORTED, "Unsupported statement type " + statement.getClass().getSimpleName());
-        }
+        throw new PrestoException(NOT_SUPPORTED, "Unsupported statement type " + statement.getClass().getSimpleName());
     }
 
     private RelationPlan createExplainAnalyzePlan(Analysis analysis, Explain statement)

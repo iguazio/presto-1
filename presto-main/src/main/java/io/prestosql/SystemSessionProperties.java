@@ -111,6 +111,7 @@ public final class SystemSessionProperties
     public static final String MAX_GROUPING_SETS = "max_grouping_sets";
     public static final String STATISTICS_CPU_TIMER_ENABLED = "statistics_cpu_timer_enabled";
     public static final String ENABLE_STATS_CALCULATOR = "enable_stats_calculator";
+    public static final String COLLECT_PLAN_STATISTICS_FOR_ALL_QUERIES = "collect_plan_statistics_for_all_queries";
     public static final String IGNORE_STATS_CALCULATOR_FAILURES = "ignore_stats_calculator_failures";
     public static final String MAX_DRIVERS_PER_TASK = "max_drivers_per_task";
     public static final String DEFAULT_FILTER_FACTOR_ENABLED = "default_filter_factor_enabled";
@@ -347,7 +348,7 @@ public final class SystemSessionProperties
                         false),
                 new PropertyMetadata<>(
                         SPILL_ENABLED,
-                        "Experimental: Enable spilling",
+                        "Enable spilling",
                         BOOLEAN,
                         Boolean.class,
                         featuresConfig.isSpillEnabled(),
@@ -374,7 +375,7 @@ public final class SystemSessionProperties
                         false),
                 dataSizeProperty(
                         AGGREGATION_OPERATOR_UNSPILL_MEMORY_LIMIT,
-                        "Experimental: How much memory can should be allocated per aggragation operator in unspilling process",
+                        "How much memory should be allocated per aggregation operator in unspilling process",
                         featuresConfig.getAggregationOperatorUnspillMemoryLimit(),
                         false),
                 booleanProperty(
@@ -384,7 +385,7 @@ public final class SystemSessionProperties
                         false),
                 booleanProperty(
                         ITERATIVE_OPTIMIZER,
-                        "Experimental: enable iterative optimizer",
+                        "Enable iterative optimizer",
                         featuresConfig.isIterativeOptimizerEnabled(),
                         false),
                 durationProperty(
@@ -474,8 +475,13 @@ public final class SystemSessionProperties
                         false),
                 booleanProperty(
                         ENABLE_STATS_CALCULATOR,
-                        "Experimental: Enable statistics calculator",
+                        "Enable statistics calculator",
                         featuresConfig.isEnableStatsCalculator(),
+                        false),
+                booleanProperty(
+                        COLLECT_PLAN_STATISTICS_FOR_ALL_QUERIES,
+                        "Collect plan statistics for non-EXPLAIN queries",
+                        featuresConfig.isCollectPlanStatisticsForAllQueries(),
                         false),
                 new PropertyMetadata<>(
                         MAX_DRIVERS_PER_TASK,
@@ -904,6 +910,11 @@ public final class SystemSessionProperties
     public static boolean isEnableStatsCalculator(Session session)
     {
         return session.getSystemProperty(ENABLE_STATS_CALCULATOR, Boolean.class);
+    }
+
+    public static boolean isCollectPlanStatisticsForAllQueries(Session session)
+    {
+        return session.getSystemProperty(COLLECT_PLAN_STATISTICS_FOR_ALL_QUERIES, Boolean.class);
     }
 
     public static boolean isIgnoreStatsCalculatorFailures(Session session)
