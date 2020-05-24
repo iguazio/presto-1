@@ -142,7 +142,7 @@ public class OracleNumberHandling
             }
             else {
                 // if the type is well-defined and falls within our limits, Presto's default read function can be used
-                readMapping = decimalColumnMapping(prestoDecimal);
+                readMapping = decimalColumnMapping(prestoDecimal, config.getNumberRoundMode());
             }
         }
 

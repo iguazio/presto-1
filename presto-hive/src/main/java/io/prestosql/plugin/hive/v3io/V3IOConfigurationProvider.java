@@ -109,7 +109,7 @@ public class V3IOConfigurationProvider
             final byte[] phrase =
                     new AesGcmEncryption().decrypt(toKey(encryptionKey, salt), encryptedToken, associatedData);
 
-            return new String(phrase);
+            return new String(phrase, StandardCharsets.UTF_8);
         }
 
         // Convert to 16 bytes key

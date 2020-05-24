@@ -47,7 +47,7 @@ public class TestOracleNumberHandling
         TestOracleColumnMappings.assertColumnMappingNotEquals(read2, read3);
 
         // ensure our custom and default read mappings are not seen as equal, even with the same type parameters.
-        ColumnMapping read4 = StandardColumnMappings.decimalColumnMapping(createDecimalType(30, 2));
+        ColumnMapping read4 = StandardColumnMappings.decimalColumnMapping(createDecimalType(30, 2), RoundingMode.UNNECESSARY);
         ColumnMapping read5 = OracleColumnMappings.roundDecimalColumnMapping(createDecimalType(30, 2), RoundingMode.UP);
         TestOracleColumnMappings.assertColumnMappingNotEquals(read4, read5);
     }
@@ -84,7 +84,7 @@ public class TestOracleNumberHandling
         // test (ratio) defined precision, defined scale (within limits)
 
         numberHandling = buildNumberHandling(30, 2, config);
-        readExpected = decimalColumnMapping(createDecimalType(30, 2));
+        readExpected = decimalColumnMapping(createDecimalType(30, 2), RoundingMode.UNNECESSARY);
         TestOracleColumnMappings.assertColumnMappingEquals(readExpected, numberHandling.getColumnMapping());
 
         // test (ratio) defined precision, undefined scale
@@ -111,7 +111,7 @@ public class TestOracleNumberHandling
         // test (ratio) scale >= precision, and scale <= MAX_PRECISION
         expectedScale = 24;
         numberHandling = buildNumberHandling(20, expectedScale, config);
-        readExpected = decimalColumnMapping(createDecimalType(Decimals.MAX_PRECISION, expectedScale));
+        readExpected = decimalColumnMapping(createDecimalType(Decimals.MAX_PRECISION, expectedScale), RoundingMode.UNNECESSARY);
         TestOracleColumnMappings.assertColumnMappingEquals(readExpected, numberHandling.getColumnMapping());
 
         // test (ratio) scale >= precision, and scale > MAX_PRECISION
@@ -140,7 +140,7 @@ public class TestOracleNumberHandling
 
         // test defined precision, defined scale (within limits)
         numberHandling = buildNumberHandling(30, 2, config);
-        readExpected = decimalColumnMapping(createDecimalType(30, 2));
+        readExpected = decimalColumnMapping(createDecimalType(30, 2), RoundingMode.UNNECESSARY);
         TestOracleColumnMappings.assertColumnMappingEquals(readExpected, numberHandling.getColumnMapping());
 
         // test defined precision, undefined scale
@@ -165,7 +165,7 @@ public class TestOracleNumberHandling
 
         fixedScale = 24;
         numberHandling = buildNumberHandling(20, fixedScale, config);
-        readExpected = decimalColumnMapping(createDecimalType(Decimals.MAX_PRECISION, fixedScale));
+        readExpected = decimalColumnMapping(createDecimalType(Decimals.MAX_PRECISION, fixedScale), RoundingMode.UNNECESSARY);
         TestOracleColumnMappings.assertColumnMappingEquals(readExpected, numberHandling.getColumnMapping());
 
         // test scale >= precision, and scale > MAX_PRECISION
