@@ -21,6 +21,7 @@ import io.airlift.configuration.AbstractConfigurationAwareModule;
 import io.prestosql.plugin.jdbc.BaseJdbcConfig;
 import io.prestosql.plugin.jdbc.ConnectionFactory;
 import io.prestosql.plugin.jdbc.DriverConnectionFactory;
+import io.prestosql.plugin.jdbc.ForBaseJdbc;
 import io.prestosql.plugin.jdbc.JdbcClient;
 import io.prestosql.plugin.jdbc.credential.CredentialProvider;
 import oracle.jdbc.OracleDriver;
@@ -35,13 +36,13 @@ public class OracleModule
     @Override
     protected void setup(Binder binder)
     {
-        binder.bind(JdbcClient.class).to(OracleClient.class).in(Scopes.SINGLETON);
-        buildConfigObject(BaseJdbcConfig.class);
+        binder.bind(JdbcClient.class).annotatedWith(ForBaseJdbc.class).to(OracleClient.class).in(Scopes.SINGLETON);
         configBinder(binder).bindConfig(OracleConfig.class);
     }
 
     @Provides
     @Singleton
+    @ForBaseJdbc
     public ConnectionFactory getConnectionFactory(BaseJdbcConfig config, CredentialProvider credentialProvider, OracleConfig oracleConfig)
     {
         // Extra oracle-specific connection properties
