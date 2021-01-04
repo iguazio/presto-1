@@ -19,7 +19,7 @@ import io.airlift.configuration.AbstractConfigurationAwareModule;
 import io.prestosql.server.ui.ClusterResource;
 import io.prestosql.server.ui.ClusterStatsResource;
 import io.prestosql.server.ui.DisabledWebUiAuthenticationManager;
-import io.prestosql.server.ui.FormWebUiAuthenticationManager;
+import io.prestosql.server.ui.FixedUserWebUiAuthenticationManager;
 import io.prestosql.server.ui.UiQueryResource;
 import io.prestosql.server.ui.WebUiAuthenticationManager;
 import io.prestosql.server.ui.WebUiConfig;
@@ -39,7 +39,7 @@ public class WebUiModule
         configBinder(binder).bindConfig(WebUiConfig.class);
 
         if (buildConfigObject(WebUiConfig.class).isEnabled()) {
-            binder.bind(WebUiAuthenticationManager.class).to(FormWebUiAuthenticationManager.class).in(Scopes.SINGLETON);
+            binder.bind(WebUiAuthenticationManager.class).to(FixedUserWebUiAuthenticationManager.class).in(Scopes.SINGLETON);
             jaxrsBinder(binder).bind(ClusterResource.class);
             jaxrsBinder(binder).bind(ClusterStatsResource.class);
             jaxrsBinder(binder).bind(UiQueryResource.class);
