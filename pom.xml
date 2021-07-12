@@ -374,12 +374,6 @@
             </dependency>
 
             <dependency>
-                <groupId>io.prestosql</groupId>
-                <artifactId>presto-oracle</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
                 <groupId>io.trino</groupId>
                 <artifactId>trino-pinot</artifactId>
                 <version>${project.version}</version>
@@ -1238,6 +1232,12 @@
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt</artifactId>
                 <version>0.9.0</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.prestosql</groupId>
+                <artifactId>presto-oracle</artifactId>
+                <version>${project.version}</version>
             </dependency>
 
             <!-- io.confluent:kafka-avro-serializer uses multiple versions of this transitive dependency -->
