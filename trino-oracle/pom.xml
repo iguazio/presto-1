@@ -3,14 +3,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.prestosql</groupId>
-        <artifactId>presto-root</artifactId>
-        <version>332</version>
+        <groupId>io.trino</groupId>
+        <artifactId>trino-root</artifactId>
+        <version>359</version>
     </parent>
 
-    <artifactId>presto-oracle</artifactId>
+    <artifactId>trino-oracle</artifactId>
     <description>Presto - Oracle Connector</description>
-    <packaging>presto-plugin</packaging>
+    <packaging>trino-plugin</packaging>
 
     <properties>
         <air.main.basedir>${project.parent.basedir}</air.main.basedir>
@@ -25,8 +25,8 @@
         </dependency>
 
         <dependency>
-            <groupId>io.prestosql</groupId>
-            <artifactId>presto-base-jdbc</artifactId>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-base-jdbc</artifactId>
         </dependency>
 
         <dependency>
@@ -61,8 +61,8 @@
 
         <!-- Presto SPI -->
         <dependency>
-            <groupId>io.prestosql</groupId>
-            <artifactId>presto-spi</artifactId>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-spi</artifactId>
             <scope>provided</scope>
         </dependency>
 
@@ -92,8 +92,8 @@
         </dependency>
 
         <dependency>
-            <groupId>io.prestosql</groupId>
-            <artifactId>presto-main</artifactId>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-main</artifactId>
             <scope>test</scope>
         </dependency>
 
