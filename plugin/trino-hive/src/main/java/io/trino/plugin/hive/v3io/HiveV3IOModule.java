@@ -11,12 +11,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.prestosql.plugin.hive.v3io;
+package io.trino.plugin.hive.v3io;
 
 import com.google.inject.Binder;
 import com.google.inject.Scopes;
 import io.airlift.configuration.AbstractConfigurationAwareModule;
-import io.prestosql.plugin.hive.DynamicConfigurationProvider;
+import io.trino.plugin.hive.DynamicConfigurationProvider;
 
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 

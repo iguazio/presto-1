@@ -41,7 +41,6 @@ import io.prestosql.plugin.hive.rubix.RubixModule;
 import io.prestosql.plugin.hive.s3.HiveS3Module;
 import io.prestosql.plugin.hive.security.HiveSecurityModule;
 import io.prestosql.plugin.hive.security.SystemTableAwareAccessControl;
-import io.prestosql.plugin.hive.v3io.HiveV3IOModule;
 import io.prestosql.spi.NodeManager;
 import io.prestosql.spi.PageIndexerFactory;
 import io.prestosql.spi.PageSorter;
@@ -57,6 +56,7 @@ import io.prestosql.spi.connector.ConnectorSplitManager;
 import io.prestosql.spi.connector.SystemTable;
 import io.prestosql.spi.procedure.Procedure;
 import io.prestosql.spi.type.TypeManager;
+import io.trino.plugin.hive.v3io.HiveV3IOModule;
 import org.weakref.jmx.guice.MBeanModule;
 
 import java.util.Map;

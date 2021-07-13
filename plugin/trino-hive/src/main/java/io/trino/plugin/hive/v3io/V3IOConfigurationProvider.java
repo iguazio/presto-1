@@ -11,9 +11,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.prestosql.plugin.hive.v3io;
+package io.trino.plugin.hive.v3io;
 
-import io.prestosql.plugin.hive.DynamicConfigurationProvider;
+import io.trino.plugin.hive.DynamicConfigurationProvider;
 import org.apache.hadoop.conf.Configuration;
 
 import javax.crypto.Cipher;
@@ -33,8 +33,8 @@ import java.util.Base64;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
-import static io.prestosql.plugin.hive.DynamicConfigurationProvider.setCacheKey;
-import static io.prestosql.plugin.hive.HdfsEnvironment.HdfsContext;
+import static io.trino.plugin.hive.DynamicConfigurationProvider.setCacheKey;
+import static io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
 
 public class V3IOConfigurationProvider
         implements DynamicConfigurationProvider
