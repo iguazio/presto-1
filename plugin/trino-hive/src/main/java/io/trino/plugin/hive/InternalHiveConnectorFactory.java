@@ -44,6 +44,7 @@ import io.trino.plugin.hive.rubix.RubixModule;
 import io.trino.plugin.hive.s3.HiveS3Module;
 import io.trino.plugin.hive.security.HiveSecurityModule;
 import io.trino.plugin.hive.security.SystemTableAwareAccessControl;
+import io.trino.plugin.hive.v3io.HiveV3IOModule;
 import io.trino.spi.NodeManager;
 import io.trino.spi.PageIndexerFactory;
 import io.trino.spi.PageSorter;
@@ -95,6 +96,7 @@ public final class InternalHiveConnectorFactory
                     new HiveHdfsModule(),
                     new HiveS3Module(),
                     new HiveGcsModule(),
+                    new HiveV3IOModule(),
                     new HiveAzureModule(),
                     conditionalModule(RubixEnabledConfig.class, RubixEnabledConfig::isCacheEnabled, new RubixModule()),
                     new HiveMetastoreModule(metastore),
