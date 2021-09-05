@@ -14,6 +14,7 @@
 package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import io.trino.Session;
 import io.trino.cost.PlanNodeStatsEstimate;
 import io.trino.metadata.Metadata;
@@ -34,6 +35,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
@@ -103,17 +105,26 @@ public class PruneTableScanColumns
         }
         else {
             // IG-19292
-            // newAssignments = newOutputs.stream()
-            //        .collect(toImmutableMap(Function.identity(), node.getAssignments()::get));
-            newAssignments = node.getAssignments();
+            if ("v3io".equals(node.getTable().getCatalogName())) {
+                newAssignments = node.getAssignments();
+            }
+            else {
+                newAssignments = newOutputs.stream()
+                        .collect(toImmutableMap(Function.identity(), node.getAssignments()::get));
+            }
         }
 
         // This bit of code breaks v3io-presto (IG-19292). It was added in https://github.com/trinodb/trino/pull/6959
         // and released in 353.
-        // Set<ColumnHandle> visibleColumns = ImmutableSet.copyOf(newAssignments.values());
-        // TupleDomain<ColumnHandle> enforcedConstraint = node.getEnforcedConstraint()
-        //        .filter((columnHandle, domain) -> visibleColumns.contains(columnHandle));
-        TupleDomain<ColumnHandle> enforcedConstraint = node.getEnforcedConstraint();
+        TupleDomain<ColumnHandle> enforcedConstraint;
+        if ("v3io".equals(node.getTable().getCatalogName())) {
+            enforcedConstraint = node.getEnforcedConstraint();
+        }
+        else {
+            Set<ColumnHandle> visibleColumns = ImmutableSet.copyOf(newAssignments.values());
+            enforcedConstraint = node.getEnforcedConstraint()
+                    .filter((columnHandle, domain) -> visibleColumns.contains(columnHandle));
+        }
 
         Optional<PlanNodeStatsEstimate> newStatistics = node.getStatistics().map(statistics ->
                 new PlanNodeStatsEstimate(
