@@ -104,13 +104,27 @@ public class PruneTableScanColumns
             newAssignments = builder.build();
         }
         else {
-            newAssignments = newOutputs.stream()
-                    .collect(toImmutableMap(Function.identity(), node.getAssignments()::get));
+            // IG-19292
+            if ("v3io".equals(node.getTable().getCatalogName())) {
+                newAssignments = node.getAssignments();
+            }
+            else {
+                newAssignments = newOutputs.stream()
+                        .collect(toImmutableMap(Function.identity(), node.getAssignments()::get));
+            }
         }
 
-        Set<ColumnHandle> visibleColumns = ImmutableSet.copyOf(newAssignments.values());
-        TupleDomain<ColumnHandle> enforcedConstraint = node.getEnforcedConstraint()
-                .filter((columnHandle, domain) -> visibleColumns.contains(columnHandle));
+        // This bit of code breaks v3io-presto (IG-19292). It was added in https://github.com/trinodb/trino/pull/6959
+        // and released in 353.
+        TupleDomain<ColumnHandle> enforcedConstraint;
+        if ("v3io".equals(node.getTable().getCatalogName())) {
+            enforcedConstraint = node.getEnforcedConstraint();
+        }
+        else {
+            Set<ColumnHandle> visibleColumns = ImmutableSet.copyOf(newAssignments.values());
+            enforcedConstraint = node.getEnforcedConstraint()
+                    .filter((columnHandle, domain) -> visibleColumns.contains(columnHandle));
+        }
 
         Optional<PlanNodeStatsEstimate> newStatistics = node.getStatistics().map(statistics ->
                 new PlanNodeStatsEstimate(

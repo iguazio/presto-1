@@ -116,7 +116,10 @@ public class TableScanNode
         this.assignments = ImmutableMap.copyOf(requireNonNull(assignments, "assignments is null"));
         checkArgument(assignments.keySet().containsAll(outputs), "assignments does not cover all of outputs");
         requireNonNull(enforcedConstraint, "enforcedConstraint is null");
-        validateEnforcedConstraint(enforcedConstraint, outputs, assignments);
+        // IG-19292
+        if (!"v3io".equals(table.getCatalogName())) {
+            validateEnforcedConstraint(enforcedConstraint, outputs, assignments);
+        }
         this.enforcedConstraint = enforcedConstraint;
         this.statistics = requireNonNull(statistics, "statistics is null");
         this.updateTarget = updateTarget;
