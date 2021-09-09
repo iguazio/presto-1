@@ -105,7 +105,7 @@ public class PruneTableScanColumns
         }
         else {
             // IG-19292
-            if ("v3io".equals(node.getTable().getCatalogName())) {
+            if ("v3io".equals(node.getTable().getCatalogName().getCatalogName())) {
                 newAssignments = node.getAssignments();
             }
             else {
@@ -115,9 +115,9 @@ public class PruneTableScanColumns
         }
 
         // This bit of code breaks v3io-presto (IG-19292). It was added in https://github.com/trinodb/trino/pull/6959
-        // and released in 353.
+        // and released in 353. We revert to the old behaviour for v3io.
         TupleDomain<ColumnHandle> enforcedConstraint;
-        if ("v3io".equals(node.getTable().getCatalogName())) {
+        if ("v3io".equals(node.getTable().getCatalogName().getCatalogName())) {
             enforcedConstraint = node.getEnforcedConstraint();
         }
         else {
