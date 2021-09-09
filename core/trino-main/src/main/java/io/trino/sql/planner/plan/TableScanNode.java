@@ -117,7 +117,7 @@ public class TableScanNode
         checkArgument(assignments.keySet().containsAll(outputs), "assignments does not cover all of outputs");
         requireNonNull(enforcedConstraint, "enforcedConstraint is null");
         // IG-19292
-        if (!"v3io".equals(table.getCatalogName())) {
+        if (!"v3io".equals(table.getCatalogName().getCatalogName())) {
             validateEnforcedConstraint(enforcedConstraint, outputs, assignments);
         }
         this.enforcedConstraint = enforcedConstraint;
