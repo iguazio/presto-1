@@ -31,7 +31,7 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.util.Map;
-import java.util.OptionalInt;
+import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static io.airlift.concurrent.Threads.threadsNamed;
@@ -77,6 +77,7 @@ public class TestQueryContext
                     new QueryId("query"),
                     DataSize.ofBytes(10),
                     DataSize.ofBytes(20),
+                    Optional.empty(),
                     new MemoryPool(GENERAL_POOL, DataSize.ofBytes(10)),
                     new TestingGcMonitor(),
                     localQueryRunner.getExecutor(),
@@ -111,7 +112,7 @@ public class TestQueryContext
         QueryId queryId = new QueryId("query");
         QueryContext queryContext = createQueryContext(queryId, generalPool);
         TaskStateMachine taskStateMachine = new TaskStateMachine(TaskId.valueOf("task-id"), TEST_EXECUTOR);
-        TaskContext taskContext = queryContext.addTaskContext(taskStateMachine, TEST_SESSION, () -> {}, false, false, OptionalInt.empty());
+        TaskContext taskContext = queryContext.addTaskContext(taskStateMachine, TEST_SESSION, () -> {}, false, false);
         DriverContext driverContext = taskContext.addPipelineContext(0, false, false, false).addDriverContext();
         OperatorContext operatorContext = driverContext.addOperatorContext(0, new PlanNodeId("test"), "test");
 
@@ -142,6 +143,7 @@ public class TestQueryContext
         return new QueryContext(queryId,
                 DataSize.ofBytes(10_000),
                 DataSize.ofBytes(10_000),
+                Optional.empty(),
                 generalPool,
                 new TestingGcMonitor(),
                 TEST_EXECUTOR,

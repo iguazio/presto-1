@@ -41,7 +41,7 @@ import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.CharType;
 import io.trino.spi.type.DecimalType;
-import io.trino.spi.type.Decimals;
+import io.trino.spi.type.Int128;
 import io.trino.spi.type.LongTimestamp;
 import io.trino.spi.type.MapType;
 import io.trino.spi.type.RowType;
@@ -448,7 +448,7 @@ public final class HiveWriteUtils
     public static Path getTableDefaultLocation(Database database, HdfsContext context, HdfsEnvironment hdfsEnvironment, String schemaName, String tableName)
     {
         Optional<String> location = database.getLocation();
-        if (location.isEmpty() || location.get().isEmpty()) {
+        if (location.isEmpty()) {
             throw new TrinoException(HIVE_DATABASE_LOCATION_ERROR, format("Database '%s' location is not set", schemaName));
         }
 
@@ -528,6 +528,11 @@ public final class HiveWriteUtils
         }
     }
 
+    public static boolean isFileCreatedByQuery(String fileName, String queryId)
+    {
+        return fileName.startsWith(queryId) || fileName.endsWith(queryId);
+    }
+
     public static Path createTemporaryPath(ConnectorSession session, HdfsContext context, HdfsEnvironment hdfsEnvironment, Path targetPath)
     {
         // use a per-user temporary directory to avoid permission problems
@@ -581,7 +586,7 @@ public final class HiveWriteUtils
     public static void createDirectory(HdfsContext context, HdfsEnvironment hdfsEnvironment, Path path)
     {
         try {
-            if (!hdfsEnvironment.getFileSystem(context, path).mkdirs(path, hdfsEnvironment.getNewDirectoryPermissions())) {
+            if (!hdfsEnvironment.getFileSystem(context, path).mkdirs(path, hdfsEnvironment.getNewDirectoryPermissions().orElse(null))) {
                 throw new IOException("mkdirs returned false");
             }
         }
@@ -589,12 +594,14 @@ public final class HiveWriteUtils
             throw new TrinoException(HIVE_FILESYSTEM_ERROR, "Failed to create directory: " + path, e);
         }
 
-        // explicitly set permission since the default umask overrides it on creation
-        try {
-            hdfsEnvironment.getFileSystem(context, path).setPermission(path, hdfsEnvironment.getNewDirectoryPermissions());
-        }
-        catch (IOException e) {
-            throw new TrinoException(HIVE_FILESYSTEM_ERROR, "Failed to set permission on directory: " + path, e);
+        if (hdfsEnvironment.getNewDirectoryPermissions().isPresent()) {
+            // explicitly set permission since the default umask overrides it on creation
+            try {
+                hdfsEnvironment.getFileSystem(context, path).setPermission(path, hdfsEnvironment.getNewDirectoryPermissions().get());
+            }
+            catch (IOException e) {
+                throw new TrinoException(HIVE_FILESYSTEM_ERROR, "Failed to set permission on directory: " + path, e);
+            }
         }
     }
 
@@ -740,7 +747,7 @@ public final class HiveWriteUtils
             unscaledValue = BigInteger.valueOf(decimalType.getLong(block, position));
         }
         else {
-            unscaledValue = Decimals.decodeUnscaledValue(decimalType.getSlice(block, position));
+            unscaledValue = ((Int128) decimalType.getObject(block, position)).toBigInteger();
         }
         return HiveDecimal.create(unscaledValue, decimalType.getScale());
     }

@@ -91,7 +91,7 @@ public class TestTpchConnectorTest
         EstimatedStatsAndCost scanEstimate = new EstimatedStatsAndCost(15000.0, 1597294.0, 1597294.0, 0.0, 0.0);
         EstimatedStatsAndCost totalEstimate = new EstimatedStatsAndCost(15000.0, 1597294.0, 1597294.0, 0.0, 1597294.0);
         IoPlanPrinter.IoPlan.TableColumnInfo input = new IoPlanPrinter.IoPlan.TableColumnInfo(
-                new CatalogSchemaTableName("tpch", "sf0.01", "orders"),
+                new CatalogSchemaTableName("tpch", "tiny", "orders"),
                 ImmutableSet.of(
                         new IoPlanPrinter.ColumnConstraint(
                                 "orderstatus",
@@ -111,7 +111,7 @@ public class TestTpchConnectorTest
                 scanEstimate);
 
         ObjectMapperProvider objectMapperProvider = new ObjectMapperProvider();
-        objectMapperProvider.setJsonDeserializers(ImmutableMap.of(Type.class, new TypeDeserializer(getQueryRunner().getMetadata())));
+        objectMapperProvider.setJsonDeserializers(ImmutableMap.of(Type.class, new TypeDeserializer(getQueryRunner().getTypeManager())));
         JsonCodec<IoPlanPrinter.IoPlan> codec = new JsonCodecFactory(objectMapperProvider).jsonCodec(IoPlanPrinter.IoPlan.class);
 
         assertEquals(

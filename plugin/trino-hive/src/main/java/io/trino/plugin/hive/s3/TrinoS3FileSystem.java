@@ -465,7 +465,7 @@ public class TrinoS3FileSystem
     public FSDataOutputStream create(Path path, FsPermission permission, boolean overwrite, int bufferSize, short replication, long blockSize, Progressable progress)
             throws IOException
     {
-        // Ignore the overwrite flag, since Trino always writes to unique file names.
+        // Ignore the overwrite flag, since Trino Hive connector *usually* writes to unique file names.
         // Checking for file existence is thus an unnecessary, expensive operation.
         return new FSDataOutputStream(createOutputStream(path), statistics);
     }
@@ -720,8 +720,7 @@ public class TrinoS3FileSystem
      * This exception is for stopping retries for S3 calls that shouldn't be retried.
      * For example, "Caused by: com.amazonaws.services.s3.model.AmazonS3Exception: Forbidden (Service: Amazon S3; Status Code: 403 ..."
      */
-    @VisibleForTesting
-    static class UnrecoverableS3OperationException
+    public static class UnrecoverableS3OperationException
             extends IOException
     {
         public UnrecoverableS3OperationException(Path path, Throwable cause)
@@ -1572,15 +1571,6 @@ public class TrinoS3FileSystem
         private void flushBuffer(boolean finished)
                 throws IOException
         {
-            try {
-                waitForPreviousUploadFinish();
-            }
-            catch (IOException e) {
-                failed = true;
-                abortUploadSuppressed(e);
-                throw e;
-            }
-
             // skip multipart upload if there would only be one part
             if (finished && uploadId.isEmpty()) {
                 InputStream in = new ByteArrayInputStream(buffer, 0, bufferSize);
@@ -1597,6 +1587,7 @@ public class TrinoS3FileSystem
                     return;
                 }
                 catch (AmazonServiceException e) {
+                    failed = true;
                     throw new IOException(e);
                 }
             }
@@ -1605,8 +1596,23 @@ public class TrinoS3FileSystem
             if (bufferSize == buffer.length || (finished && bufferSize > 0)) {
                 byte[] data = buffer;
                 int length = bufferSize;
-                this.buffer = new byte[buffer.length];
-                bufferSize = 0;
+
+                if (finished) {
+                    this.buffer = null;
+                }
+                else {
+                    this.buffer = new byte[buffer.length];
+                    bufferSize = 0;
+                }
+
+                try {
+                    waitForPreviousUploadFinish();
+                }
+                catch (IOException e) {
+                    failed = true;
+                    abortUploadSuppressed(e);
+                    throw e;
+                }
 
                 inProgressUploadFuture = uploadExecutor.submit(() -> uploadPage(data, length));
             }

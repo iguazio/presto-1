@@ -20,9 +20,10 @@ import io.trino.connector.MockConnectorFactory;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.testing.LocalQueryRunner;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 
 import java.util.List;
 
@@ -31,13 +32,15 @@ import static io.trino.testing.TestingSession.createBogusTestingCatalog;
 import static io.trino.testing.TestingSession.testSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.testng.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS;
 
+@TestInstance(PER_CLASS)
 public class TestShowQueries
 {
     private QueryAssertions assertions;
 
-    @BeforeClass
+    @BeforeAll
     public void init()
     {
         LocalQueryRunner queryRunner = LocalQueryRunner.create(testSessionBuilder()
@@ -66,11 +69,11 @@ public class TestShowQueries
                         .build(),
                 ImmutableMap.of());
         queryRunner.getCatalogManager().registerCatalog(createBogusTestingCatalog("testing_catalog"));
-        queryRunner.getMetadata().getSessionPropertyManager().addConnectorSessionProperties(new CatalogName("testing_catalog"), List.of());
+        queryRunner.getSessionPropertyManager().addConnectorSessionProperties(new CatalogName("testing_catalog"), List.of());
         assertions = new QueryAssertions(queryRunner);
     }
 
-    @AfterClass(alwaysRun = true)
+    @AfterAll
     public void teardown()
     {
         assertions.close();
@@ -114,7 +117,7 @@ public class TestShowQueries
     {
         assertThat(assertions.query(
                 "SHOW SESSION LIKE '%page_row_c%'"))
-                .matches("VALUES (cast('filter_and_project_min_output_page_row_count' as VARCHAR(53)), cast('256' as VARCHAR(14)), cast('256' as VARCHAR(14)), 'integer', cast('Experimental: Minimum output page row count for filter and project operators' as VARCHAR(103)))");
+                .matches("VALUES (cast('filter_and_project_min_output_page_row_count' as VARCHAR(53)), cast('256' as VARCHAR(14)), cast('256' as VARCHAR(14)), 'integer', cast('Experimental: Minimum output page row count for filter and project operators' as VARCHAR(142)))");
     }
 
     @Test
@@ -126,7 +129,7 @@ public class TestShowQueries
                 .hasMessage("Escape string must be a single character");
         assertThat(assertions.query(
                 "SHOW SESSION LIKE '%page$_row$_c%' ESCAPE '$'"))
-                .matches("VALUES (cast('filter_and_project_min_output_page_row_count' as VARCHAR(53)), cast('256' as VARCHAR(14)), cast('256' as VARCHAR(14)), 'integer', cast('Experimental: Minimum output page row count for filter and project operators' as VARCHAR(103)))");
+                .matches("VALUES (cast('filter_and_project_min_output_page_row_count' as VARCHAR(53)), cast('256' as VARCHAR(14)), cast('256' as VARCHAR(14)), 'integer', cast('Experimental: Minimum output page row count for filter and project operators' as VARCHAR(142)))");
     }
 
     @Test
@@ -170,7 +173,7 @@ public class TestShowQueries
                         "(VARCHAR 'node_version', VARCHAR 'varchar' , VARCHAR '', VARCHAR '')");
         assertThat(assertions.query("SHOW COLUMNS FROM system.runtime.nodes LIKE 'node_id'"))
                 .matches("VALUES (VARCHAR 'node_id', VARCHAR 'varchar' , VARCHAR '', VARCHAR '')");
-        assertEquals(assertions.execute("SHOW COLUMNS FROM system.runtime.nodes LIKE ''").getRowCount(), 0);
+        assertEquals(0, assertions.execute("SHOW COLUMNS FROM system.runtime.nodes LIKE ''").getRowCount());
     }
 
     @Test

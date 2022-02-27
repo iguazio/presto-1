@@ -22,6 +22,7 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.CharType;
 import io.trino.spi.type.DecimalType;
+import io.trino.spi.type.Int128;
 import io.trino.spi.type.LongTimestampWithTimeZone;
 import io.trino.spi.type.TimestampType;
 import io.trino.spi.type.TimestampWithTimeZoneType;
@@ -48,7 +49,6 @@ import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DateTimeEncoding.unpackMillisUtc;
 import static io.trino.spi.type.DateType.DATE;
-import static io.trino.spi.type.Decimals.decodeUnscaledValue;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
 import static io.trino.spi.type.RealType.REAL;
@@ -60,6 +60,8 @@ import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
 import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.TypeUtils.readNativeValue;
 import static java.lang.Float.intBitsToFloat;
+import static java.lang.Math.floorDiv;
+import static java.lang.Math.floorMod;
 import static java.lang.Math.toIntExact;
 import static java.util.concurrent.TimeUnit.DAYS;
 import static org.joda.time.DateTimeZone.UTC;
@@ -73,7 +75,7 @@ final class TypeUtils
     static String getArrayElementPgTypeName(ConnectorSession session, PostgreSqlClient client, Type elementType)
     {
         if (DOUBLE.equals(elementType)) {
-            return "float";
+            return "float8";
         }
 
         if (REAL.equals(elementType)) {
@@ -169,7 +171,7 @@ final class TypeUtils
                 BigInteger unscaledValue = BigInteger.valueOf((long) prestoNative);
                 return new BigDecimal(unscaledValue, decimalType.getScale(), new MathContext(decimalType.getPrecision()));
             }
-            BigInteger unscaledValue = decodeUnscaledValue((Slice) prestoNative);
+            BigInteger unscaledValue = ((Int128) prestoNative).toBigInteger();
             return new BigDecimal(unscaledValue, decimalType.getScale(), new MathContext(decimalType.getPrecision()));
         }
 
@@ -208,8 +210,8 @@ final class TypeUtils
             }
             else {
                 LongTimestampWithTimeZone value = (LongTimestampWithTimeZone) prestoNative;
-                long epochSeconds = value.getEpochMillis() / MILLISECONDS_PER_SECOND;
-                long nanosOfSecond = value.getEpochMillis() % MILLISECONDS_PER_SECOND * NANOSECONDS_PER_MILLISECOND
+                long epochSeconds = floorDiv(value.getEpochMillis(), MILLISECONDS_PER_SECOND);
+                long nanosOfSecond = floorMod(value.getEpochMillis(), MILLISECONDS_PER_SECOND) * NANOSECONDS_PER_MILLISECOND
                         + value.getPicosOfMilli() / PICOSECONDS_PER_NANOSECOND;
                 return OffsetDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds, nanosOfSecond), UTC_KEY.getZoneId());
             }
