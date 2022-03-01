@@ -14,10 +14,10 @@
 package io.trino.operator;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import io.airlift.slice.Slice;
 import io.trino.connector.CatalogName;
 import io.trino.execution.buffer.PagesSerde;
 import io.trino.execution.buffer.PagesSerdeFactory;
-import io.trino.execution.buffer.SerializedPage;
 import io.trino.metadata.Split;
 import io.trino.spi.Page;
 import io.trino.spi.connector.UpdatablePageSource;
@@ -44,6 +44,7 @@ public class ExchangeOperator
         private final PlanNodeId sourceId;
         private final ExchangeClientSupplier exchangeClientSupplier;
         private final PagesSerdeFactory serdeFactory;
+        private final RetryPolicy retryPolicy;
         private ExchangeClient exchangeClient;
         private boolean closed;
 
@@ -51,12 +52,14 @@ public class ExchangeOperator
                 int operatorId,
                 PlanNodeId sourceId,
                 ExchangeClientSupplier exchangeClientSupplier,
-                PagesSerdeFactory serdeFactory)
+                PagesSerdeFactory serdeFactory,
+                RetryPolicy retryPolicy)
         {
             this.operatorId = operatorId;
             this.sourceId = sourceId;
             this.exchangeClientSupplier = exchangeClientSupplier;
             this.serdeFactory = serdeFactory;
+            this.retryPolicy = requireNonNull(retryPolicy, "retryPolicy is null");
         }
 
         @Override
@@ -69,9 +72,10 @@ public class ExchangeOperator
         public SourceOperator createOperator(DriverContext driverContext)
         {
             checkState(!closed, "Factory is already closed");
+            TaskContext taskContext = driverContext.getPipelineContext().getTaskContext();
             OperatorContext operatorContext = driverContext.addOperatorContext(operatorId, sourceId, ExchangeOperator.class.getSimpleName());
             if (exchangeClient == null) {
-                exchangeClient = exchangeClientSupplier.get(driverContext.getPipelineContext().localSystemMemoryContext());
+                exchangeClient = exchangeClientSupplier.get(driverContext.getPipelineContext().localSystemMemoryContext(), taskContext::sourceTaskFailed, retryPolicy);
             }
 
             return new ExchangeOperator(
@@ -120,8 +124,8 @@ public class ExchangeOperator
         requireNonNull(split, "split is null");
         checkArgument(split.getCatalogName().equals(REMOTE_CONNECTOR_ID), "split is not a remote split");
 
-        URI location = ((RemoteSplit) split.getConnectorSplit()).getLocation();
-        exchangeClient.addLocation(location);
+        RemoteSplit remoteSplit = (RemoteSplit) split.getConnectorSplit();
+        exchangeClient.addLocation(remoteSplit.getTaskId(), URI.create(remoteSplit.getLocation()));
 
         return Optional::empty;
     }
@@ -178,15 +182,14 @@ public class ExchangeOperator
     @Override
     public Page getOutput()
     {
-        SerializedPage page = exchangeClient.pollPage();
+        Slice page = exchangeClient.pollPage();
         if (page == null) {
             return null;
         }
 
-        operatorContext.recordNetworkInput(page.getSizeInBytes(), page.getPositionCount());
-
         Page deserializedPage = serde.deserialize(page);
-        operatorContext.recordProcessedInput(deserializedPage.getSizeInBytes(), page.getPositionCount());
+        operatorContext.recordNetworkInput(page.length(), deserializedPage.getPositionCount());
+        operatorContext.recordProcessedInput(deserializedPage.getSizeInBytes(), deserializedPage.getPositionCount());
 
         return deserializedPage;
     }

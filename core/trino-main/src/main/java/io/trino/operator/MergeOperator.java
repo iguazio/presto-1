@@ -158,14 +158,16 @@ public class MergeOperator
         checkArgument(split.getConnectorSplit() instanceof RemoteSplit, "split is not a remote split");
         checkState(!blockedOnSplits.isDone(), "noMoreSplits has been called already");
 
-        URI location = ((RemoteSplit) split.getConnectorSplit()).getLocation();
-        ExchangeClient exchangeClient = closer.register(exchangeClientSupplier.get(operatorContext.localSystemMemoryContext()));
-        exchangeClient.addLocation(location);
+        TaskContext taskContext = operatorContext.getDriverContext().getPipelineContext().getTaskContext();
+        ExchangeClient exchangeClient = closer.register(exchangeClientSupplier.get(operatorContext.localSystemMemoryContext(), taskContext::sourceTaskFailed, RetryPolicy.NONE));
+        RemoteSplit remoteSplit = (RemoteSplit) split.getConnectorSplit();
+        exchangeClient.addLocation(remoteSplit.getTaskId(), URI.create(remoteSplit.getLocation()));
         exchangeClient.noMoreLocations();
         pageProducers.add(exchangeClient.pages()
                 .map(serializedPage -> {
-                    operatorContext.recordNetworkInput(serializedPage.getSizeInBytes(), serializedPage.getPositionCount());
-                    return pagesSerde.deserialize(serializedPage);
+                    Page page = pagesSerde.deserialize(serializedPage);
+                    operatorContext.recordNetworkInput(serializedPage.length(), page.getPositionCount());
+                    return page;
                 }));
 
         return Optional::empty;

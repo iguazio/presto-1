@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+import io.airlift.slice.Slice;
 import io.airlift.stats.TestingGcMonitor;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
@@ -31,7 +32,6 @@ import io.trino.execution.buffer.OutputBuffer;
 import io.trino.execution.buffer.OutputBuffers.OutputBufferId;
 import io.trino.execution.buffer.PagesSerdeFactory;
 import io.trino.execution.buffer.PartitionedOutputBuffer;
-import io.trino.execution.buffer.SerializedPage;
 import io.trino.execution.executor.TaskExecutor;
 import io.trino.memory.MemoryPool;
 import io.trino.memory.QueryContext;
@@ -47,11 +47,12 @@ import io.trino.operator.SourceOperator;
 import io.trino.operator.SourceOperatorFactory;
 import io.trino.operator.StageExecutionDescriptor;
 import io.trino.operator.TaskContext;
-import io.trino.operator.TaskOutputOperator.TaskOutputOperatorFactory;
 import io.trino.operator.ValuesOperator.ValuesOperatorFactory;
+import io.trino.operator.output.TaskOutputOperator.TaskOutputOperatorFactory;
 import io.trino.spi.HostAddress;
 import io.trino.spi.Page;
 import io.trino.spi.QueryId;
+import io.trino.spi.block.TestingBlockEncodingSerde;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.UpdatablePageSource;
 import io.trino.spi.memory.MemoryPoolId;
@@ -59,6 +60,7 @@ import io.trino.spi.type.Type;
 import io.trino.spiller.SpillSpaceTracker;
 import io.trino.sql.planner.LocalExecutionPlanner.LocalExecutionPlan;
 import io.trino.sql.planner.plan.PlanNodeId;
+import org.openjdk.jol.info.ClassLayout;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -97,8 +99,8 @@ import static io.trino.execution.buffer.BufferState.OPEN;
 import static io.trino.execution.buffer.BufferState.TERMINAL_BUFFER_STATES;
 import static io.trino.execution.buffer.OutputBuffers.BufferType.PARTITIONED;
 import static io.trino.execution.buffer.OutputBuffers.createInitialEmptyOutputBuffers;
+import static io.trino.execution.buffer.PagesSerde.getSerializedPagePositionCount;
 import static io.trino.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
-import static io.trino.metadata.MetadataManager.createTestMetadataManager;
 import static io.trino.operator.PipelineExecutionStrategy.GROUPED_EXECUTION;
 import static io.trino.operator.PipelineExecutionStrategy.UNGROUPED_EXECUTION;
 import static io.trino.spi.type.VarcharType.VARCHAR;
@@ -115,7 +117,7 @@ public class TestSqlTaskExecution
     private static final OutputBufferId OUTPUT_BUFFER_ID = new OutputBufferId(0);
     private static final CatalogName CONNECTOR_ID = new CatalogName("test");
     private static final Duration ASSERT_WAIT_TIMEOUT = new Duration(1, HOURS);
-    public static final TaskId TASK_ID = new TaskId("query", 0, 0);
+    public static final TaskId TASK_ID = new TaskId(new StageId("query", 0), 0, 0);
 
     @DataProvider
     public static Object[][] executionStrategies()
@@ -156,7 +158,7 @@ public class TestSqlTaskExecution
                     TABLE_SCAN_NODE_ID,
                     outputBuffer,
                     Function.identity(),
-                    new PagesSerdeFactory(createTestMetadataManager().getBlockEncodingSerde(), false));
+                    new PagesSerdeFactory(new TestingBlockEncodingSerde(), false));
             LocalExecutionPlan localExecutionPlan = new LocalExecutionPlan(
                     ImmutableList.of(new DriverFactory(
                             0,
@@ -172,7 +174,6 @@ public class TestSqlTaskExecution
                     taskStateMachine,
                     taskContext,
                     outputBuffer,
-                    ImmutableList.of(),
                     localExecutionPlan,
                     taskExecutor,
                     taskNotificationExecutor,
@@ -378,7 +379,7 @@ public class TestSqlTaskExecution
                     joinCNodeId,
                     outputBuffer,
                     Function.identity(),
-                    new PagesSerdeFactory(createTestMetadataManager().getBlockEncodingSerde(), false));
+                    new PagesSerdeFactory(new TestingBlockEncodingSerde(), false));
             TestingCrossJoinOperatorFactory joinOperatorFactoryA = new TestingCrossJoinOperatorFactory(2, joinANodeId, buildStatesA);
             TestingCrossJoinOperatorFactory joinOperatorFactoryB = new TestingCrossJoinOperatorFactory(102, joinBNodeId, buildStatesB);
             TestingCrossJoinOperatorFactory joinOperatorFactoryC = new TestingCrossJoinOperatorFactory(3, joinCNodeId, buildStatesC);
@@ -423,7 +424,6 @@ public class TestSqlTaskExecution
                     taskStateMachine,
                     taskContext,
                     outputBuffer,
-                    ImmutableList.of(),
                     localExecutionPlan,
                     taskExecutor,
                     taskNotificationExecutor,
@@ -599,13 +599,14 @@ public class TestSqlTaskExecution
                 new QueryId("queryid"),
                 DataSize.of(1, MEGABYTE),
                 DataSize.of(2, MEGABYTE),
+                Optional.empty(),
                 new MemoryPool(new MemoryPoolId("test"), DataSize.of(1, GIGABYTE)),
                 new TestingGcMonitor(),
                 taskNotificationExecutor,
                 driverYieldExecutor,
                 DataSize.of(1, MEGABYTE),
                 new SpillSpaceTracker(DataSize.of(1, GIGABYTE)));
-        return queryContext.addTaskContext(taskStateMachine, TEST_SESSION, () -> {}, false, false, OptionalInt.empty());
+        return queryContext.addTaskContext(taskStateMachine, TEST_SESSION, () -> {}, false, false);
     }
 
     private PartitionedOutputBuffer newTestingOutputBuffer(ScheduledExecutorService taskNotificationExecutor)
@@ -661,8 +662,8 @@ public class TestSqlTaskExecution
                 assertFalse(bufferComplete, "bufferComplete is set before enough positions are consumed");
                 BufferResult results = outputBuffer.get(outputBufferId, sequenceId, DataSize.of(1, MEGABYTE)).get(nanoUntil - System.nanoTime(), TimeUnit.NANOSECONDS);
                 bufferComplete = results.isBufferComplete();
-                for (SerializedPage serializedPage : results.getSerializedPages()) {
-                    surplusPositions += serializedPage.getPositionCount();
+                for (Slice serializedPage : results.getSerializedPages()) {
+                    surplusPositions += getSerializedPagePositionCount(serializedPage);
                 }
                 sequenceId += results.getSerializedPages().size();
             }
@@ -676,8 +677,8 @@ public class TestSqlTaskExecution
             while (!bufferComplete) {
                 BufferResult results = outputBuffer.get(outputBufferId, sequenceId, DataSize.of(1, MEGABYTE)).get(nanoUntil - System.nanoTime(), TimeUnit.NANOSECONDS);
                 bufferComplete = results.isBufferComplete();
-                for (SerializedPage serializedPage : results.getSerializedPages()) {
-                    assertEquals(serializedPage.getPositionCount(), 0);
+                for (Slice serializedPage : results.getSerializedPages()) {
+                    assertEquals(getSerializedPagePositionCount(serializedPage), 0);
                 }
                 sequenceId += results.getSerializedPages().size();
             }
@@ -1313,6 +1314,8 @@ public class TestSqlTaskExecution
     public static class TestingSplit
             implements ConnectorSplit
     {
+        private static final int INSTANCE_SIZE = ClassLayout.parseClass(TestingSplit.class).instanceSize();
+
         private final int begin;
         private final int end;
 
@@ -1339,6 +1342,12 @@ public class TestSqlTaskExecution
         public Object getInfo()
         {
             return this;
+        }
+
+        @Override
+        public long getRetainedSizeInBytes()
+        {
+            return INSTANCE_SIZE;
         }
 
         public int getBegin()

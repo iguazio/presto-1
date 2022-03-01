@@ -44,10 +44,7 @@ For HBase 2.x and Phoenix 5.x (5.1.0 or later) use:
 
     connector.name=phoenix5
 
-Configuration properties
-------------------------
-
-The following configuration properties are available:
+The following Phoenix-specific configuration properties are available:
 
 ================================================== ========== ===================================================================================
 Property Name                                      Required   Description
@@ -59,7 +56,20 @@ Property Name                                      Required   Description
                                                               default the location is ``/hbase``
 ``phoenix.config.resources``                       No         Comma-separated list of configuration files (e.g. ``hbase-site.xml``) to use for
                                                               connection properties.  These files must exist on the machines running Trino.
+``phoenix.max-scans-per-split``                    No         Maximum number of HBase scans that will be performed in a single split. Default is 20.
+                                                              Lower values will lead to more splits in Trino.
+                                                              Can also be set via session propery ``max_scans_per_split``.
+                                                              For details see: `<https://phoenix.apache.org/update_statistics.html>`_.
+                                                              (This setting has no effect when guideposts are disabled in Phoenix.)
 ================================================== ========== ===================================================================================
+
+.. include:: jdbc-common-configurations.fragment
+
+.. include:: jdbc-procedures.fragment
+
+.. include:: jdbc-case-insensitive-matching.fragment
+
+.. include:: non-transactional-insert.fragment
 
 Querying Phoenix tables
 -------------------------
@@ -87,8 +97,10 @@ Finally, you can access the ``clicks`` table in the ``web`` schema::
 If you used a different name for your catalog properties file, use
 that catalog name instead of ``phoenix`` in the above examples.
 
-Data types
-----------
+.. _phoenix-type-mapping:
+
+Type mapping
+------------
 
 The data type mappings are as follows:
 
@@ -96,19 +108,28 @@ The data type mappings are as follows:
 Phoenix                      Trino
 ==========================   ============
 ``BOOLEAN``                  (same)
-``BIGINT``                   (same)
-``INTEGER``                  (same)
-``SMALLINT``                 (same)
 ``TINYINT``                  (same)
-``DOUBLE``                   (same)
+``UNSIGNED_TINYINT``         ``TINYINT``
+``SMALLINT``                 (same)
+``UNSIGNED_SMALLINT``        ``SMALLINT``
+``INTEGER``                  (same)
+``UNSIGNED_INTEGER``         ``INTEGER``
+``BIGINT``                   (same)
+``UNSIGNED_LONG``            ``BIGINT``
 ``FLOAT``                    ``REAL``
+``UNSIGNED_FLOAT``           ``FLOAT``
+``DOUBLE``                   (same)
+``UNSIGNED_DOUBLE``          ``DOUBLE``
 ``DECIMAL``                  (same)
 ``BINARY``                   ``VARBINARY``
 ``VARBINARY``                (same)
-``DATE``                     (same)
 ``TIME``                     (same)
-``VARCHAR``                  (same)
+``UNSIGNED_TIME``            ``TIME``
+``DATE``                     (same)
+``UNSIGNED_DATE``            ``DATE``
 ``CHAR``                     (same)
+``VARCHAR``                  (same)
+``ARRAY``                    (same)
 ==========================   ============
 
 The Phoenix fixed length ``BINARY`` data type is mapped to the Trino
@@ -116,6 +137,21 @@ variable length ``VARBINARY`` data type. There is no way to create a
 Phoenix table in Trino that uses the ``BINARY`` data type, as Trino
 does not have an equivalent type.
 
+Decimal type handling
+^^^^^^^^^^^^^^^^^^^^^
+
+``DECIMAL`` types with unspecified precision or scale are mapped to a Trino ``DECIMAL`` with a default precision of 38 and default scale of 0. The scale can
+be changed by setting the ``decimal-mapping`` configuration property or the ``decimal_mapping`` session property to
+``allow_overflow``. The scale of the resulting type is controlled via the ``decimal-default-scale``
+configuration property or the ``decimal-rounding-mode`` session property. The precision is always 38.
+
+By default, values that require rounding or truncation to fit will cause a failure at runtime. This behavior
+is controlled via the ``decimal-rounding-mode`` configuration property or the ``decimal_rounding_mode`` session
+property, which can be set to ``UNNECESSARY`` (the default),
+``UP``, ``DOWN``, ``CEILING``, ``FLOOR``, ``HALF_UP``, ``HALF_DOWN``, or ``HALF_EVEN``
+(see `RoundingMode <https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/math/RoundingMode.html#enum.constant.summary>`_).
+
+.. include:: jdbc-type-mapping.fragment
 
 Table properties - Phoenix
 --------------------------
@@ -179,3 +215,22 @@ Property Name               Default Value    Description
 ``bloomfilter``             ``NONE``         Bloomfilter to use. Valid values are ``NONE`` (default), ``ROW``, or ``ROWCOL``.
 =========================== ================ ==============================================================================================================
 
+.. _phoenix-sql-support:
+
+SQL support
+-----------
+
+The connector provides read and write access to data and metadata in
+Phoenix. In addition to the :ref:`globally available
+<sql-globally-available>` and :ref:`read operation <sql-read-operations>`
+statements, the connector supports the following features:
+
+* :doc:`/sql/insert`
+* :doc:`/sql/delete`
+* :doc:`/sql/create-table`
+* :doc:`/sql/create-table-as`
+* :doc:`/sql/drop-table`
+* :doc:`/sql/create-schema`
+* :doc:`/sql/drop-schema`
+
+.. include:: sql-delete-limitation.fragment

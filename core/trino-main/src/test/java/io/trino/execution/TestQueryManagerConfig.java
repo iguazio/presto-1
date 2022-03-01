@@ -16,6 +16,7 @@ package io.trino.execution;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
+import io.trino.operator.RetryPolicy;
 import org.testng.annotations.Test;
 
 import java.util.Map;
@@ -50,14 +51,18 @@ public class TestQueryManagerConfig
                 .setRemoteTaskMinErrorDuration(new Duration(5, MINUTES))
                 .setRemoteTaskMaxErrorDuration(new Duration(5, MINUTES))
                 .setRemoteTaskMaxCallbackThreads(1000)
-                .setQueryExecutionPolicy("all-at-once")
+                .setQueryExecutionPolicy("phased")
                 .setQueryMaxRunTime(new Duration(100, DAYS))
                 .setQueryMaxExecutionTime(new Duration(100, DAYS))
                 .setQueryMaxPlanningTime(new Duration(10, MINUTES))
                 .setQueryMaxCpuTime(new Duration(1_000_000_000, DAYS))
                 .setQueryMaxScanPhysicalBytes(null)
                 .setRequiredWorkers(1)
-                .setRequiredWorkersMaxWait(new Duration(5, MINUTES)));
+                .setRequiredWorkersMaxWait(new Duration(5, MINUTES))
+                .setRetryPolicy(RetryPolicy.NONE)
+                .setRetryAttempts(4)
+                .setRetryInitialDelay(new Duration(10, SECONDS))
+                .setRetryMaxDelay(new Duration(1, MINUTES)));
     }
 
     @Test
@@ -79,7 +84,7 @@ public class TestQueryManagerConfig
                 .put("query.remote-task.min-error-duration", "30s")
                 .put("query.remote-task.max-error-duration", "60s")
                 .put("query.remote-task.max-callback-threads", "10")
-                .put("query.execution-policy", "phased")
+                .put("query.execution-policy", "legacy-phased")
                 .put("query.max-run-time", "2h")
                 .put("query.max-execution-time", "3h")
                 .put("query.max-planning-time", "1h")
@@ -87,6 +92,10 @@ public class TestQueryManagerConfig
                 .put("query.max-scan-physical-bytes", "1kB")
                 .put("query-manager.required-workers", "333")
                 .put("query-manager.required-workers-max-wait", "33m")
+                .put("retry-policy", "QUERY")
+                .put("retry-attempts", "0")
+                .put("retry-initial-delay", "1m")
+                .put("retry-max-delay", "1h")
                 .build();
 
         QueryManagerConfig expected = new QueryManagerConfig()
@@ -105,14 +114,18 @@ public class TestQueryManagerConfig
                 .setRemoteTaskMinErrorDuration(new Duration(60, SECONDS))
                 .setRemoteTaskMaxErrorDuration(new Duration(60, SECONDS))
                 .setRemoteTaskMaxCallbackThreads(10)
-                .setQueryExecutionPolicy("phased")
+                .setQueryExecutionPolicy("legacy-phased")
                 .setQueryMaxRunTime(new Duration(2, HOURS))
                 .setQueryMaxExecutionTime(new Duration(3, HOURS))
                 .setQueryMaxPlanningTime(new Duration(1, HOURS))
                 .setQueryMaxCpuTime(new Duration(2, DAYS))
                 .setQueryMaxScanPhysicalBytes(DataSize.of(1, KILOBYTE))
                 .setRequiredWorkers(333)
-                .setRequiredWorkersMaxWait(new Duration(33, MINUTES));
+                .setRequiredWorkersMaxWait(new Duration(33, MINUTES))
+                .setRetryPolicy(RetryPolicy.QUERY)
+                .setRetryAttempts(0)
+                .setRetryInitialDelay(new Duration(1, MINUTES))
+                .setRetryMaxDelay(new Duration(1, HOURS));
 
         assertFullMapping(properties, expected);
     }

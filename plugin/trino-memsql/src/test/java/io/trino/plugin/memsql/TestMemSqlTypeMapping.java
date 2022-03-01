@@ -14,31 +14,28 @@
 package io.trino.plugin.memsql;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.trino.Session;
 import io.trino.plugin.jdbc.UnsupportedTypeHandling;
 import io.trino.spi.type.TimeZoneKey;
 import io.trino.spi.type.VarcharType;
 import io.trino.testing.AbstractTestQueryFramework;
 import io.trino.testing.QueryRunner;
+import io.trino.testing.TestingSession;
 import io.trino.testing.datatype.CreateAndInsertDataSetup;
 import io.trino.testing.datatype.CreateAsSelectDataSetup;
 import io.trino.testing.datatype.DataSetup;
-import io.trino.testing.datatype.DataType;
-import io.trino.testing.datatype.DataTypeTest;
+import io.trino.testing.datatype.SqlDataTypeTest;
 import io.trino.testing.sql.SqlExecutor;
 import io.trino.testing.sql.TestTable;
 import io.trino.testing.sql.TrinoSqlExecutor;
-import org.testng.SkipException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Objects;
-import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
@@ -52,34 +49,34 @@ import static io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
 import static io.trino.plugin.memsql.MemSqlClient.MEMSQL_VARCHAR_MAX_LENGTH;
 import static io.trino.plugin.memsql.MemSqlQueryRunner.createMemSqlQueryRunner;
 import static io.trino.spi.type.BigintType.BIGINT;
+import static io.trino.spi.type.BooleanType.BOOLEAN;
+import static io.trino.spi.type.CharType.createCharType;
 import static io.trino.spi.type.DateType.DATE;
 import static io.trino.spi.type.DecimalType.createDecimalType;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
 import static io.trino.spi.type.RealType.REAL;
 import static io.trino.spi.type.SmallintType.SMALLINT;
+import static io.trino.spi.type.TimeType.TIME_MICROS;
+import static io.trino.spi.type.TimeType.TIME_SECONDS;
 import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
+import static io.trino.spi.type.TimeZoneKey.getTimeZoneKey;
+import static io.trino.spi.type.TimestampType.createTimestampType;
+import static io.trino.spi.type.TinyintType.TINYINT;
+import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.VarcharType.createUnboundedVarcharType;
 import static io.trino.spi.type.VarcharType.createVarcharType;
-import static io.trino.testing.datatype.DataType.bigintDataType;
-import static io.trino.testing.datatype.DataType.charDataType;
-import static io.trino.testing.datatype.DataType.dataType;
-import static io.trino.testing.datatype.DataType.dateDataType;
-import static io.trino.testing.datatype.DataType.decimalDataType;
-import static io.trino.testing.datatype.DataType.doubleDataType;
-import static io.trino.testing.datatype.DataType.formatStringLiteral;
-import static io.trino.testing.datatype.DataType.integerDataType;
-import static io.trino.testing.datatype.DataType.realDataType;
-import static io.trino.testing.datatype.DataType.smallintDataType;
-import static io.trino.testing.datatype.DataType.stringDataType;
-import static io.trino.testing.datatype.DataType.tinyintDataType;
-import static io.trino.testing.datatype.DataType.varcharDataType;
 import static io.trino.type.JsonType.JSON;
 import static java.lang.String.format;
 import static java.math.RoundingMode.HALF_UP;
 import static java.math.RoundingMode.UNNECESSARY;
+import static java.time.ZoneOffset.UTC;
 import static java.util.Arrays.asList;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/**
+ * @see <a href="https://docs.singlestore.com/db/latest/en/reference/sql-reference/data-types.html">SingleStore (MemSQL) data types</a>
+ */
 public class TestMemSqlTypeMapping
         extends AbstractTestQueryFramework
 {
@@ -92,7 +89,7 @@ public class TestMemSqlTypeMapping
             throws Exception
     {
         memSqlServer = new TestingMemSqlServer();
-        return createMemSqlQueryRunner(memSqlServer);
+        return createMemSqlQueryRunner(memSqlServer, ImmutableMap.of(), ImmutableMap.of(), ImmutableList.of());
     }
 
     @AfterClass(alwaysRun = true)
@@ -104,68 +101,77 @@ public class TestMemSqlTypeMapping
     @Test
     public void testBasicTypes()
     {
-        DataTypeTest.create()
-                .addRoundTrip(bigintDataType(), 123_456_789_012L)
-                .addRoundTrip(integerDataType(), 1_234_567_890)
-                .addRoundTrip(smallintDataType(), (short) 32_456)
-                .addRoundTrip(tinyintDataType(), (byte) 125)
-                .addRoundTrip(doubleDataType(), 123.45d)
-                .addRoundTrip(realDataType(), 123.45f)
+        SqlDataTypeTest.create()
+                .addRoundTrip("bigint", "123456789012", BIGINT, "123456789012")
+                .addRoundTrip("integer", "1234567890", INTEGER, "1234567890")
+                .addRoundTrip("smallint", "32456", SMALLINT, "SMALLINT '32456'")
+                .addRoundTrip("tinyint", "125", TINYINT, "TINYINT '125'")
+                .addRoundTrip("double", "123.45", DOUBLE, "DOUBLE '123.45'")
+                .addRoundTrip("real", "123.45", REAL, "REAL '123.45'")
                 .execute(getQueryRunner(), trinoCreateAsSelect("test_basic_types"));
+    }
+
+    @Test
+    public void testBit()
+    {
+        SqlDataTypeTest.create()
+                .addRoundTrip("bit", "b'1'", BOOLEAN, "true")
+                .addRoundTrip("bit", "b'0'", BOOLEAN, "false")
+                .addRoundTrip("bit", "NULL", BOOLEAN, "CAST(NULL AS BOOLEAN)")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_bit"));
+    }
+
+    @Test
+    public void testBoolean()
+    {
+        SqlDataTypeTest.create()
+                .addRoundTrip("boolean", "true", TINYINT, "TINYINT '1'")
+                .addRoundTrip("boolean", "false", TINYINT, "TINYINT '0'")
+                .addRoundTrip("boolean", "NULL", TINYINT, "CAST(NULL AS TINYINT)")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_boolean"))
+                .execute(getQueryRunner(), trinoCreateAsSelect("tpch.test_boolean"));
     }
 
     @Test
     public void testFloat()
     {
-        singlePrecisionFloatingPointTests(realDataType())
-                .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_float"));
-        singlePrecisionFloatingPointTests(memSqlFloatDataType())
-                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_float"));
-    }
-
-    private static DataTypeTest singlePrecisionFloatingPointTests(DataType<Float> floatType)
-    {
         // we are not testing Nan/-Infinity/+Infinity as those are not supported by MemSQL
-        return DataTypeTest.create()
-                .addRoundTrip(floatType, 3.14f)
-                // TODO Overeagerly rounded by MemSQL to 3.14159
-                // .addRoundTrip(floatType, 3.1415927f)
-                .addRoundTrip(floatType, null);
+        SqlDataTypeTest.create()
+                .addRoundTrip("real", "3.14", REAL, "REAL '3.14'")
+                .addRoundTrip("real", "10.3e0", REAL, "REAL '10.3e0'")
+                .addRoundTrip("real", "NULL", REAL, "CAST(NULL AS REAL)")
+                // .addRoundTrip("real", "3.1415927", REAL, "REAL '3.1415927'") // Overeagerly rounded by MemSQL to 3.14159
+                .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_float"));
+
+        SqlDataTypeTest.create()
+                .addRoundTrip("float", "3.14", REAL, "REAL '3.14'")
+                .addRoundTrip("float", "10.3e0", REAL, "REAL '10.3e0'")
+                .addRoundTrip("float", "NULL", REAL, "CAST(NULL AS REAL)")
+                // .addRoundTrip("float", "3.1415927", REAL, "REAL '3.1415927'") // Overeagerly rounded by MemSQL to 3.14159
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_float"));
     }
 
     @Test
     public void testDouble()
     {
-        doublePrecisionFloatingPointTests(doubleDataType())
-                .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_double"));
-        doublePrecisionFloatingPointTests(memSqlDoubleDataType())
-                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_double"));
-    }
-
-    private static DataTypeTest doublePrecisionFloatingPointTests(DataType<Double> doubleType)
-    {
         // we are not testing Nan/-Infinity/+Infinity as those are not supported by MemSQL
-        return DataTypeTest.create()
-                .addRoundTrip(doubleType, 1.0e100d)
-                .addRoundTrip(doubleType, 123.456E10)
-                .addRoundTrip(doubleType, null);
+        SqlDataTypeTest.create()
+                .addRoundTrip("double", "1.0E100", DOUBLE, "DOUBLE '1.0E100'")
+                .addRoundTrip("double", "123.456E10", DOUBLE, "DOUBLE '123.456E10'")
+                .addRoundTrip("double", "NULL", DOUBLE, "CAST(NULL AS double)")
+                .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_double"))
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_double"));
     }
 
     @Test
     public void testUnsignedTypes()
     {
-        DataType<Short> memSqlUnsignedTinyInt = DataType.dataType("TINYINT UNSIGNED", SMALLINT, Objects::toString);
-        DataType<Integer> memSqlUnsignedSmallInt = DataType.dataType("SMALLINT UNSIGNED", INTEGER, Objects::toString);
-        DataType<Long> memSqlUnsignedInt = DataType.dataType("INT UNSIGNED", BIGINT, Objects::toString);
-        DataType<Long> memSqlUnsignedInteger = DataType.dataType("INTEGER UNSIGNED", BIGINT, Objects::toString);
-        DataType<BigDecimal> memSqlUnsignedBigint = DataType.dataType("BIGINT UNSIGNED", createDecimalType(20), Objects::toString);
-
-        DataTypeTest.create()
-                .addRoundTrip(memSqlUnsignedTinyInt, (short) 255)
-                .addRoundTrip(memSqlUnsignedSmallInt, 65_535)
-                .addRoundTrip(memSqlUnsignedInt, 4_294_967_295L)
-                .addRoundTrip(memSqlUnsignedInteger, 4_294_967_295L)
-                .addRoundTrip(memSqlUnsignedBigint, new BigDecimal("18446744073709551615"))
+        SqlDataTypeTest.create()
+                .addRoundTrip("tinyint unsigned", "255", SMALLINT, "SMALLINT '255'")
+                .addRoundTrip("smallint unsigned", "65535", INTEGER)
+                .addRoundTrip("int unsigned", "4294967295", BIGINT)
+                .addRoundTrip("integer unsigned", "4294967295", BIGINT)
+                .addRoundTrip("bigint unsigned", "18446744073709551615", createDecimalType(20, 0), "CAST('18446744073709551615' AS decimal(20, 0))")
                 .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_unsigned"));
     }
 
@@ -183,25 +189,27 @@ public class TestMemSqlTypeMapping
                 .execute(getQueryRunner(), trinoCreateAsSelect("test_decimal"));
     }
 
-    private DataTypeTest decimalTests()
+    private SqlDataTypeTest decimalTests()
     {
-        return DataTypeTest.create()
-                .addRoundTrip(decimalDataType(3, 0), new BigDecimal("193"))
-                .addRoundTrip(decimalDataType(3, 0), new BigDecimal("19"))
-                .addRoundTrip(decimalDataType(3, 0), new BigDecimal("-193"))
-                .addRoundTrip(decimalDataType(3, 1), new BigDecimal("10.0"))
-                .addRoundTrip(decimalDataType(3, 1), new BigDecimal("10.1"))
-                .addRoundTrip(decimalDataType(3, 1), new BigDecimal("-10.1"))
-                .addRoundTrip(decimalDataType(4, 2), new BigDecimal("2"))
-                .addRoundTrip(decimalDataType(4, 2), new BigDecimal("2.3"))
-                .addRoundTrip(decimalDataType(24, 2), new BigDecimal("2"))
-                .addRoundTrip(decimalDataType(24, 2), new BigDecimal("2.3"))
-                .addRoundTrip(decimalDataType(24, 2), new BigDecimal("123456789.3"))
-                .addRoundTrip(decimalDataType(24, 4), new BigDecimal("12345678901234567890.31"))
-                .addRoundTrip(decimalDataType(30, 5), new BigDecimal("3141592653589793238462643.38327"))
-                .addRoundTrip(decimalDataType(30, 5), new BigDecimal("-3141592653589793238462643.38327"))
-                .addRoundTrip(decimalDataType(38, 0), new BigDecimal("27182818284590452353602874713526624977"))
-                .addRoundTrip(decimalDataType(38, 0), new BigDecimal("-27182818284590452353602874713526624977"));
+        return SqlDataTypeTest.create()
+                .addRoundTrip("decimal(3, 0)", "CAST(NULL AS decimal(3, 0))", createDecimalType(3, 0), "CAST(NULL AS decimal(3, 0))")
+                .addRoundTrip("decimal(3, 0)", "CAST('193' AS decimal(3, 0))", createDecimalType(3, 0), "CAST('193' AS decimal(3, 0))")
+                .addRoundTrip("decimal(3, 0)", "CAST('19' AS decimal(3, 0))", createDecimalType(3, 0), "CAST('19' AS decimal(3, 0))")
+                .addRoundTrip("decimal(3, 0)", "CAST('-193' AS decimal(3, 0))", createDecimalType(3, 0), "CAST('-193' AS decimal(3, 0))")
+                .addRoundTrip("decimal(3, 1)", "CAST('10.0' AS decimal(3, 1))", createDecimalType(3, 1), "CAST('10.0' AS decimal(3, 1))")
+                .addRoundTrip("decimal(3, 1)", "CAST('10.1' AS decimal(3, 1))", createDecimalType(3, 1), "CAST('10.1' AS decimal(3, 1))")
+                .addRoundTrip("decimal(3, 1)", "CAST('-10.1' AS decimal(3, 1))", createDecimalType(3, 1), "CAST('-10.1' AS decimal(3, 1))")
+                .addRoundTrip("decimal(4, 2)", "CAST('2' AS decimal(4, 2))", createDecimalType(4, 2), "CAST('2' AS decimal(4, 2))")
+                .addRoundTrip("decimal(4, 2)", "CAST('2.3' AS decimal(4, 2))", createDecimalType(4, 2), "CAST('2.3' AS decimal(4, 2))")
+                .addRoundTrip("decimal(24, 2)", "CAST('2' AS decimal(24, 2))", createDecimalType(24, 2), "CAST('2' AS decimal(24, 2))")
+                .addRoundTrip("decimal(24, 2)", "CAST('2.3' AS decimal(24, 2))", createDecimalType(24, 2), "CAST('2.3' AS decimal(24, 2))")
+                .addRoundTrip("decimal(24, 2)", "CAST('123456789.3' AS decimal(24, 2))", createDecimalType(24, 2), "CAST('123456789.3' AS decimal(24, 2))")
+                .addRoundTrip("decimal(24, 4)", "CAST('12345678901234567890.31' AS decimal(24, 4))", createDecimalType(24, 4), "CAST('12345678901234567890.31' AS decimal(24, 4))")
+                .addRoundTrip("decimal(30, 5)", "CAST('3141592653589793238462643.38327' AS decimal(30, 5))", createDecimalType(30, 5), "CAST('3141592653589793238462643.38327' AS decimal(30, 5))")
+                .addRoundTrip("decimal(30, 5)", "CAST('-3141592653589793238462643.38327' AS decimal(30, 5))", createDecimalType(30, 5), "CAST('-3141592653589793238462643.38327' AS decimal(30, 5))")
+                .addRoundTrip("decimal(38, 0)", "CAST(NULL AS decimal(38, 0))", createDecimalType(38, 0), "CAST(NULL AS decimal(38, 0))")
+                .addRoundTrip("decimal(38, 0)", "CAST('27182818284590452353602874713526624977' AS decimal(38, 0))", createDecimalType(38, 0), "CAST('27182818284590452353602874713526624977' AS decimal(38, 0))")
+                .addRoundTrip("decimal(38, 0)", "CAST('-27182818284590452353602874713526624977' AS decimal(38, 0))", createDecimalType(38, 0), "CAST('-27182818284590452353602874713526624977' AS decimal(38, 0))");
     }
 
     @Test
@@ -387,73 +395,124 @@ public class TestMemSqlTypeMapping
                 .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_parameterized_char"));
     }
 
-    private DataTypeTest memSqlCharTypeTest()
+    private SqlDataTypeTest memSqlCharTypeTest()
     {
-        return DataTypeTest.create()
-                .addRoundTrip(charDataType("char", 1), "")
-                .addRoundTrip(charDataType("char", 1), "a")
-                .addRoundTrip(charDataType(1), "")
-                .addRoundTrip(charDataType(1), "a")
-                .addRoundTrip(charDataType(8), "abc")
-                .addRoundTrip(charDataType(8), "12345678")
-                .addRoundTrip(charDataType(255), "a".repeat(255));
+        return SqlDataTypeTest.create()
+                .addRoundTrip("char(1)", "NULL", createCharType(1), "CAST(NULL AS char(1))")
+                .addRoundTrip("char(1)", "''", createCharType(1), "CAST('' AS char(1))")
+                .addRoundTrip("char(1)", "'a'", createCharType(1), "CAST('a' AS char(1))")
+                .addRoundTrip("char(8)", "'abc'", createCharType(8), "CAST('abc' AS char(8))")
+                .addRoundTrip("char(8)", "'12345678'", createCharType(8), "CAST('12345678' AS char(8))")
+                .addRoundTrip("char(255)", format("'%s'", "a".repeat(255)), createCharType(255), format("CAST('%s' AS char(255))", "a".repeat(255)));
     }
 
     @Test
     public void testMemSqlCreatedParameterizedCharUnicode()
     {
-        DataTypeTest.create()
-                .addRoundTrip(charDataType(1, CHARACTER_SET_UTF8), "\u653b")
-                .addRoundTrip(charDataType(5, CHARACTER_SET_UTF8), "\u653b\u6bbb")
-                .addRoundTrip(charDataType(5, CHARACTER_SET_UTF8), "\u653b\u6bbb\u6a5f\u52d5\u968a")
+        SqlDataTypeTest.create()
+                .addRoundTrip("char(1)", "'攻'", createCharType(1), "CAST('攻' AS char(1))")
+                .addRoundTrip("char(5)", "'攻殻'", createCharType(5), "CAST('攻殻' AS char(5))")
+                .addRoundTrip("char(5)", "'攻殻機動隊'", createCharType(5), "CAST('攻殻機動隊' AS char(5))")
                 .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_parameterized_varchar"));
     }
 
     @Test
     public void testTrinoCreatedParameterizedVarchar()
     {
-        DataTypeTest.create()
-                .addRoundTrip(stringDataType("varchar(10)", createVarcharType(10)), "text_a")
-                .addRoundTrip(stringDataType("varchar(255)", createVarcharType(255)), "text_b")
-                .addRoundTrip(stringDataType("varchar(256)", createVarcharType(256)), "text_c")
-                .addRoundTrip(stringDataType("varchar(" + MEMSQL_VARCHAR_MAX_LENGTH + ")", createVarcharType(MEMSQL_VARCHAR_MAX_LENGTH)), "text_memsql_max")
+        SqlDataTypeTest.create()
+                .addRoundTrip("varchar(10)", "NULL", createVarcharType(10), "CAST(NULL AS varchar(10))")
+                .addRoundTrip("varchar(10)", "'text_a'", createVarcharType(10), "CAST('text_a' AS varchar(10))")
+                .addRoundTrip("varchar(255)", "'text_b'", createVarcharType(255), "CAST('text_b' AS varchar(255))")
+                .addRoundTrip("varchar(256)", "'text_c'", createVarcharType(256), "CAST('text_c' AS varchar(256))")
+                .addRoundTrip("varchar(" + MEMSQL_VARCHAR_MAX_LENGTH + ")", "'text_memsql_max'", createVarcharType(MEMSQL_VARCHAR_MAX_LENGTH), "CAST('text_memsql_max' AS varchar(" + MEMSQL_VARCHAR_MAX_LENGTH + "))")
                 // types larger than max VARCHAR(n) for MemSQL get mapped to one of TEXT/MEDIUMTEXT/LONGTEXT
-                .addRoundTrip(stringDataType("varchar(" + (MEMSQL_VARCHAR_MAX_LENGTH + 1) + ")", createVarcharType(65535)), "text_memsql_larger_than_max")
-                .addRoundTrip(stringDataType("varchar(65535)", createVarcharType(65535)), "text_d")
-                .addRoundTrip(stringDataType("varchar(65536)", createVarcharType(16777215)), "text_e")
-                .addRoundTrip(stringDataType("varchar(16777215)", createVarcharType(16777215)), "text_f")
-                .addRoundTrip(stringDataType("varchar(16777216)", createUnboundedVarcharType()), "text_g")
-                .addRoundTrip(stringDataType("varchar(" + VarcharType.MAX_LENGTH + ")", createUnboundedVarcharType()), "text_h")
-                .addRoundTrip(varcharDataType(), "unbounded")
+                .addRoundTrip("varchar(" + (MEMSQL_VARCHAR_MAX_LENGTH + 1) + ")", "'text_memsql_larger_than_max'", createVarcharType(65535), "CAST('text_memsql_larger_than_max' AS varchar(65535))")
+                .addRoundTrip("varchar(65535)", "'text_d'", createVarcharType(65535), "CAST('text_d' AS varchar(65535))")
+                .addRoundTrip("varchar(65536)", "'text_e'", createVarcharType(16777215), "CAST('text_e' AS varchar(16777215))")
+                .addRoundTrip("varchar(16777215)", "'text_f'", createVarcharType(16777215), "CAST('text_f' AS varchar(16777215))")
+                .addRoundTrip("varchar(16777216)", "'text_g'", createUnboundedVarcharType(), "CAST('text_g' AS varchar)")
+                .addRoundTrip("varchar(" + VarcharType.MAX_LENGTH + ")", "'text_h'", createUnboundedVarcharType(), "CAST('text_h' AS varchar)")
+                .addRoundTrip("varchar", "'unbounded'", createUnboundedVarcharType(), "CAST('unbounded' AS varchar)")
                 .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_parameterized_varchar"));
     }
 
     @Test
     public void testMemSqlCreatedParameterizedVarchar()
     {
-        DataTypeTest.create()
-                .addRoundTrip(stringDataType("tinytext", createVarcharType(255)), "a")
-                .addRoundTrip(stringDataType("text", createVarcharType(65535)), "b")
-                .addRoundTrip(stringDataType("mediumtext", createVarcharType(16777215)), "c")
-                .addRoundTrip(stringDataType("longtext", createUnboundedVarcharType()), "d")
-                .addRoundTrip(varcharDataType(32), "e")
-                .addRoundTrip(varcharDataType(15000), "f")
+        SqlDataTypeTest.create()
+                .addRoundTrip("tinytext", "'a'", createVarcharType(255), "CAST('a' AS varchar(255))")
+                .addRoundTrip("text", "'b'", createVarcharType(65535), "CAST('b' AS varchar(65535))")
+                .addRoundTrip("mediumtext", "'c'", createVarcharType(16777215), "CAST('c' AS varchar(16777215))")
+                .addRoundTrip("longtext", "'unbounded'", createUnboundedVarcharType(), "CAST('unbounded' AS varchar)")
+                .addRoundTrip("varchar(32)", "'e'", createVarcharType(32), "CAST('e' AS varchar(32))")
+                .addRoundTrip("varchar(15000)", "'f'", createVarcharType(15000), "CAST('f' AS varchar(15000))")
                 .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_parameterized_varchar"));
     }
 
     @Test
     public void testMemSqlCreatedParameterizedVarcharUnicode()
     {
-        String sampleUnicodeText = "\u653b\u6bbb\u6a5f\u52d5\u968a";
-        DataTypeTest.create()
-                .addRoundTrip(stringDataType("tinytext " + CHARACTER_SET_UTF8, createVarcharType(255)), sampleUnicodeText)
-                .addRoundTrip(stringDataType("text " + CHARACTER_SET_UTF8, createVarcharType(65535)), sampleUnicodeText)
-                .addRoundTrip(stringDataType("mediumtext " + CHARACTER_SET_UTF8, createVarcharType(16777215)), sampleUnicodeText)
-                .addRoundTrip(stringDataType("longtext " + CHARACTER_SET_UTF8, createUnboundedVarcharType()), sampleUnicodeText)
-                .addRoundTrip(varcharDataType(sampleUnicodeText.length(), CHARACTER_SET_UTF8), sampleUnicodeText)
-                .addRoundTrip(varcharDataType(32, CHARACTER_SET_UTF8), sampleUnicodeText)
-                .addRoundTrip(varcharDataType(20000, CHARACTER_SET_UTF8), sampleUnicodeText)
+        String sampleUnicodeLiteral = "'\u653b\u6bbb\u6a5f\u52d5\u968a'";
+        SqlDataTypeTest.create()
+                .addRoundTrip("tinytext " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createVarcharType(255), "CAST(" + sampleUnicodeLiteral + " AS varchar(255))")
+                .addRoundTrip("text " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createVarcharType(65535), "CAST(" + sampleUnicodeLiteral + " AS varchar(65535))")
+                .addRoundTrip("mediumtext " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createVarcharType(16777215), "CAST(" + sampleUnicodeLiteral + " AS varchar(16777215))")
+                .addRoundTrip("longtext " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createUnboundedVarcharType(), "CAST(" + sampleUnicodeLiteral + " AS varchar)")
+                .addRoundTrip("varchar(" + sampleUnicodeLiteral.length() + ") " + CHARACTER_SET_UTF8, sampleUnicodeLiteral,
+                        createVarcharType(sampleUnicodeLiteral.length()), "CAST(" + sampleUnicodeLiteral + " AS varchar(" + sampleUnicodeLiteral.length() + "))")
+                .addRoundTrip("varchar(32) " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createVarcharType(32), "CAST(" + sampleUnicodeLiteral + " AS varchar(32))")
+                .addRoundTrip("varchar(20000) " + CHARACTER_SET_UTF8, sampleUnicodeLiteral, createVarcharType(20000), "CAST(" + sampleUnicodeLiteral + " AS varchar(20000))")
+                // MemSQL version >= 7.5 supports utf8mb4, but older versions store an empty character for a 4 bytes character
+                .addRoundTrip("varchar(1) " + CHARACTER_SET_UTF8, "'😂'", createVarcharType(1), "CAST('' AS varchar(1))")
                 .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.memsql_test_parameterized_varchar_unicode"));
+    }
+
+    @Test
+    public void testVarbinary()
+    {
+        varbinaryTestCases("varbinary(50)")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_varbinary"));
+
+        varbinaryTestCases("tinyblob")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_varbinary"));
+
+        varbinaryTestCases("blob")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_varbinary"));
+
+        varbinaryTestCases("mediumblob")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_varbinary"));
+
+        varbinaryTestCases("longblob")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_varbinary"));
+
+        varbinaryTestCases("varbinary")
+                .execute(getQueryRunner(), trinoCreateAsSelect("test_varbinary"));
+    }
+
+    private SqlDataTypeTest varbinaryTestCases(String insertType)
+    {
+        return SqlDataTypeTest.create()
+                .addRoundTrip(insertType, "NULL", VARBINARY, "CAST(NULL AS varbinary)")
+                .addRoundTrip(insertType, "X''", VARBINARY, "X''")
+                .addRoundTrip(insertType, "X'68656C6C6F'", VARBINARY, "to_utf8('hello')")
+                .addRoundTrip(insertType, "X'5069C4996B6E6120C582C4856B61207720E69DB1E4BAACE983BD'", VARBINARY, "to_utf8('Piękna łąka w 東京都')")
+                .addRoundTrip(insertType, "X'4261672066756C6C206F6620F09F92B0'", VARBINARY, "to_utf8('Bag full of 💰')")
+                .addRoundTrip(insertType, "X'0001020304050607080DF9367AA7000000'", VARBINARY, "X'0001020304050607080DF9367AA7000000'") // non-text
+                .addRoundTrip(insertType, "X'000000000000'", VARBINARY, "X'000000000000'");
+    }
+
+    @Test
+    public void testBinary()
+    {
+        SqlDataTypeTest.create()
+                .addRoundTrip("binary(18)", "NULL", VARBINARY, "CAST(NULL AS varbinary)")
+                .addRoundTrip("binary(18)", "X''", VARBINARY, "X'000000000000000000000000000000000000'")
+                .addRoundTrip("binary(18)", "X'68656C6C6F'", VARBINARY, "to_utf8('hello') || X'00000000000000000000000000'")
+                .addRoundTrip("binary(18)", "X'C582C4856B61207720E69DB1E4BAACE983BD'", VARBINARY, "to_utf8('łąka w 東京都')") // no trailing zeros
+                .addRoundTrip("binary(18)", "X'4261672066756C6C206F6620F09F92B0'", VARBINARY, "to_utf8('Bag full of 💰') || X'0000'")
+                .addRoundTrip("binary(18)", "X'0001020304050607080DF9367AA7000000'", VARBINARY, "X'0001020304050607080DF9367AA700000000'") // non-text prefix
+                .addRoundTrip("binary(18)", "X'000000000000'", VARBINARY, "X'000000000000000000000000000000000000'")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.test_binary"));
     }
 
     @Test
@@ -464,23 +523,6 @@ public class TestMemSqlTypeMapping
 
         ZoneId someZone = ZoneId.of("Europe/Vilnius");
 
-        for (String timeZoneId : ImmutableList.of(UTC_KEY.getId(), jvmZone.getId(), someZone.getId())) {
-            Session session = Session.builder(getSession())
-                    .setTimeZoneKey(TimeZoneKey.getTimeZoneKey(timeZoneId))
-                    .build();
-            dateTestCases(memSqlDateDataType(value -> formatStringLiteral(value.toString())), jvmZone, someZone)
-                    .execute(getQueryRunner(), session, memSqlCreateAndInsert("tpch.test_date"));
-            dateTestCases(dateDataType(), jvmZone, someZone)
-                    .execute(getQueryRunner(), session, trinoCreateAsSelect(session, "test_date"));
-            dateTestCases(dateDataType(), jvmZone, someZone)
-                    .execute(getQueryRunner(), session, trinoCreateAsSelect(getSession(), "test_date"));
-            dateTestCases(dateDataType(), jvmZone, someZone)
-                    .execute(getQueryRunner(), session, trinoCreateAndInsert(session, "test_date"));
-        }
-    }
-
-    private DataTypeTest dateTestCases(DataType<LocalDate> dateDataType, ZoneId jvmZone, ZoneId someZone)
-    {
         LocalDate dateOfLocalTimeChangeForwardAtMidnightInJvmZone = LocalDate.of(1970, 1, 1);
         verify(jvmZone.getRules().getValidOffsets(dateOfLocalTimeChangeForwardAtMidnightInJvmZone.atStartOfDay()).isEmpty());
 
@@ -489,54 +531,358 @@ public class TestMemSqlTypeMapping
         LocalDate dateOfLocalTimeChangeBackwardAtMidnightInSomeZone = LocalDate.of(1983, 10, 1);
         verify(someZone.getRules().getValidOffsets(dateOfLocalTimeChangeBackwardAtMidnightInSomeZone.atStartOfDay().minusMinutes(1)).size() == 2);
 
-        return DataTypeTest.create()
-                .addRoundTrip(dateDataType, LocalDate.of(1952, 4, 3)) // before epoch
-                .addRoundTrip(dateDataType, LocalDate.of(1970, 1, 1))
-                .addRoundTrip(dateDataType, LocalDate.of(1970, 2, 3))
-                .addRoundTrip(dateDataType, LocalDate.of(2017, 7, 1)) // summer on northern hemisphere (possible DST)
-                .addRoundTrip(dateDataType, LocalDate.of(2017, 1, 1)) // winter on northern hemisphere (possible DST on southern hemisphere)
-                .addRoundTrip(dateDataType, dateOfLocalTimeChangeForwardAtMidnightInJvmZone)
-                .addRoundTrip(dateDataType, dateOfLocalTimeChangeForwardAtMidnightInSomeZone)
-                .addRoundTrip(dateDataType, dateOfLocalTimeChangeBackwardAtMidnightInSomeZone);
+        for (String timeZoneId : ImmutableList.of(UTC_KEY.getId(), jvmZone.getId(), someZone.getId())) {
+            Session session = Session.builder(getSession())
+                    .setTimeZoneKey(TimeZoneKey.getTimeZoneKey(timeZoneId))
+                    .build();
+
+            SqlDataTypeTest.create()
+                    .addRoundTrip("date", "CAST(NULL AS date)", DATE, "CAST(NULL AS date)")
+                    .addRoundTrip("date", "CAST('0000-01-01' AS date)", DATE, "DATE '0000-01-01'")
+                    .addRoundTrip("date", "CAST('0001-01-01' AS date)", DATE, "DATE '0001-01-01'")
+                    .addRoundTrip("date", "CAST('1000-01-01' AS date)", DATE, "DATE '1000-01-01'") // min date in docs
+                    .addRoundTrip("date", "CAST('1582-10-04' AS date)", DATE, "DATE '1582-10-04'") // before julian->gregorian switch
+                    .addRoundTrip("date", "CAST('1582-10-05' AS date)", DATE, "DATE '1582-10-05'") // begin julian->gregorian switch
+                    .addRoundTrip("date", "CAST('1582-10-14' AS date)", DATE, "DATE '1582-10-14'") // end julian->gregorian switch
+                    .addRoundTrip("date", "CAST('1952-04-03' AS date)", DATE, "DATE '1952-04-03'") // before epoch
+                    .addRoundTrip("date", "CAST('1970-01-01' AS date)", DATE, "DATE '1970-01-01'")
+                    .addRoundTrip("date", "CAST('1970-02-03' AS date)", DATE, "DATE '1970-02-03'")
+                    .addRoundTrip("date", "CAST('2017-07-01' AS date)", DATE, "DATE '2017-07-01'") // summer on northern hemisphere (possible DST)
+                    .addRoundTrip("date", "CAST('2017-01-01' AS date)", DATE, "DATE '2017-01-01'") // winter on northern hemisphere (possible DST on southern hemisphere)
+                    .addRoundTrip("date", "CAST('9999-12-31' AS date)", DATE, "DATE '9999-12-31'") // max value
+                    .addRoundTrip("date", "CAST('" + dateOfLocalTimeChangeForwardAtMidnightInJvmZone.toString() + "' AS date)",
+                            DATE, "DATE '" + dateOfLocalTimeChangeForwardAtMidnightInJvmZone.toString() + "'")
+                    .addRoundTrip("date", "CAST('" + dateOfLocalTimeChangeForwardAtMidnightInSomeZone.toString() + "' AS date)",
+                            DATE, "DATE '" + dateOfLocalTimeChangeForwardAtMidnightInSomeZone.toString() + "'")
+                    .addRoundTrip("date", "CAST('" + dateOfLocalTimeChangeBackwardAtMidnightInSomeZone.toString() + "' AS date)",
+                            DATE, "DATE '" + dateOfLocalTimeChangeBackwardAtMidnightInSomeZone.toString() + "'")
+                    .execute(getQueryRunner(), session, memSqlCreateAndInsert("tpch.test_date"))
+                    .execute(getQueryRunner(), session, trinoCreateAsSelect(session, "test_date"))
+                    .execute(getQueryRunner(), session, trinoCreateAsSelect(getSession(), "test_date"))
+                    .execute(getQueryRunner(), session, trinoCreateAndInsert(session, "test_date"));
+        }
     }
 
-    @Test
-    public void testDatetime()
+    @Test(dataProvider = "sessionZonesDataProvider")
+    public void testTime(ZoneId sessionZone)
     {
-        // TODO (https://github.com/trinodb/trino/issues/5450) MemSQL datetime is not correctly read (see comment in StandardColumnMappings.timestampColumnMappingUsingSqlTimestamp)
-        throw new SkipException("TODO");
+        Session session = Session.builder(getSession())
+                .setTimeZoneKey(getTimeZoneKey(sessionZone.getId()))
+                .build();
+
+        SqlDataTypeTest.create()
+                .addRoundTrip("time", "TIME '00:00:00'", TIME_MICROS, "TIME '00:00:00.000000'") // default to micro second (same as timestamp) in Trino
+                .addRoundTrip("time(0)", "NULL", TIME_SECONDS, "CAST(NULL AS time(0))")
+                .addRoundTrip("time(0)", "TIME '00:00:00'", TIME_SECONDS, "TIME '00:00:00'")
+                .addRoundTrip("time(0)", "TIME '01:02:03'", TIME_SECONDS, "TIME '01:02:03'")
+                .addRoundTrip("time(0)", "TIME '23:59:59'", TIME_SECONDS, "TIME '23:59:59'")
+                .addRoundTrip("time(0)", "TIME '23:59:59.9'", TIME_SECONDS, "TIME '00:00:00'") // round by engine
+                .addRoundTrip("time(6)", "NULL", TIME_MICROS, "CAST(NULL AS time(6))")
+                .addRoundTrip("time(6)", "TIME '00:00:00'", TIME_MICROS, "TIME '00:00:00.000000'")
+                .addRoundTrip("time(6)", "TIME '01:02:03'", TIME_MICROS, "TIME '01:02:03.000000'")
+                .addRoundTrip("time(6)", "TIME '23:59:59'", TIME_MICROS, "TIME '23:59:59.000000'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.9'", TIME_MICROS, "TIME '23:59:59.900000'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.99'", TIME_MICROS, "TIME '23:59:59.990000'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.999'", TIME_MICROS, "TIME '23:59:59.999000'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.9999'", TIME_MICROS, "TIME '23:59:59.999900'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.99999'", TIME_MICROS, "TIME '23:59:59.999990'")
+                .addRoundTrip("time(6)", "TIME '00:00:00.000000'", TIME_MICROS, "TIME '00:00:00.000000'")
+                .addRoundTrip("time(6)", "TIME '01:02:03.123456'", TIME_MICROS, "TIME '01:02:03.123456'")
+                .addRoundTrip("time(6)", "TIME '23:59:59.999999'", TIME_MICROS, "TIME '23:59:59.999999'")
+                .addRoundTrip("time(6)", "TIME '00:00:00.000000'", TIME_MICROS, "TIME '00:00:00.000000'") // round by engine
+                .execute(getQueryRunner(), session, trinoCreateAsSelect("tpch.test_time"))
+                .execute(getQueryRunner(), session, trinoCreateAndInsert(getSession(), "tpch.test_time"));
+
+        SqlDataTypeTest.create()
+                .addRoundTrip("time", "NULL", TIME_SECONDS, "CAST(NULL AS time(0))") // default to second in MemSQL
+                .addRoundTrip("time", "'00:00:00'", TIME_SECONDS, "TIME '00:00:00'")
+                .addRoundTrip("time", "'01:02:03'", TIME_SECONDS, "TIME '01:02:03'")
+                .addRoundTrip("time", "'23:59:59'", TIME_SECONDS, "TIME '23:59:59'")
+                .addRoundTrip("time", "'23:59:59.9'", TIME_SECONDS, "TIME '23:59:59'") // MemSQL ignores millis and stores only seconds in 'time' type
+                .addRoundTrip("time(6)", "NULL", TIME_MICROS, "CAST(NULL AS time(6))")
+                .addRoundTrip("time(6)", "'00:00:00'", TIME_MICROS, "TIME '00:00:00.000000'")
+                .addRoundTrip("time(6)", "'01:02:03'", TIME_MICROS, "TIME '01:02:03.000000'")
+                .addRoundTrip("time(6)", "'23:59:59'", TIME_MICROS, "TIME '23:59:59.000000'")
+                .addRoundTrip("time(6)", "'23:59:59.9'", TIME_MICROS, "TIME '23:59:59.900000'")
+                .addRoundTrip("time(6)", "'23:59:59.99'", TIME_MICROS, "TIME '23:59:59.990000'")
+                .addRoundTrip("time(6)", "'23:59:59.999'", TIME_MICROS, "TIME '23:59:59.999000'")
+                .addRoundTrip("time(6)", "'23:59:59.9999'", TIME_MICROS, "TIME '23:59:59.999900'")
+                .addRoundTrip("time(6)", "'23:59:59.99999'", TIME_MICROS, "TIME '23:59:59.999990'")
+                .addRoundTrip("time(6)", "'00:00:00.000000'", TIME_MICROS, "TIME '00:00:00.000000'")
+                .addRoundTrip("time(6)", "'01:02:03.123456'", TIME_MICROS, "TIME '01:02:03.123456'")
+                .addRoundTrip("time(6)", "'23:59:59.999999'", TIME_MICROS, "TIME '23:59:59.999999'")
+                .addRoundTrip("time(6)", "'23:59:59.9999999'", TIME_MICROS, "TIME '23:59:59.999999'") // MemSQL ignores nanos and stores only micros in 'time(6)' type
+                .execute(getQueryRunner(), session, memSqlCreateAndInsert("tpch.test_time"));
     }
 
-    @Test
-    public void testTimestamp()
+    @Test(dataProvider = "unsupportedTimeDataProvider")
+    public void testUnsupportedTime(String unsupportedTime)
     {
-        // TODO (https://github.com/trinodb/trino/issues/5450) MemSQL timestamp is not correctly read (see comment in StandardColumnMappings.timestampColumnMappingUsingSqlTimestamp)
-        throw new SkipException("TODO");
+        try (TestTable table = new TestTable(memSqlServer::execute, "tpch.test_unsupported_time", "(col time)", ImmutableList.of(format("'%s'", unsupportedTime)))) {
+            assertQueryFails(
+                    "SELECT * FROM " + table.getName(),
+                    format("\\Q%s cannot be parse as LocalTime (format is \"HH:mm:ss[.S]\" for data type \"TIME\")", unsupportedTime));
+        }
+
+        try (TestTable table = new TestTable(memSqlServer::execute, "tpch.test_unsupported_time", "(col time(6))", ImmutableList.of(format("'%s'", unsupportedTime)))) {
+            assertQueryFails(
+                    "SELECT * FROM " + table.getName(),
+                    format("\\Q%s.000000 cannot be parse as LocalTime (format is \"HH:mm:ss[.S]\" for data type \"TIME\")", unsupportedTime));
+        }
+    }
+
+    @DataProvider
+    public Object[][] unsupportedTimeDataProvider()
+    {
+        return new Object[][] {
+                {"-838:59:59"}, // min value in MemSQL
+                {"-00:00:01"},
+                {"24:00:00"},
+                {"838:59:59"}, // max value in MemSQL
+        };
+    }
+
+    @Test(dataProvider = "unsupportedDateTimePrecisions")
+    public void testUnsupportedTimePrecision(int precision)
+    {
+        // This test should be fixed if future MemSQL supports those precisions
+        assertThatThrownBy(() -> memSqlServer.execute(format("CREATE TABLE test_unsupported_timestamp_precision (col1 TIME(%s))", precision)))
+                .hasMessageContaining("Feature 'TIME type with precision other than 0 or 6' is not supported by MemSQL.");
+    }
+
+    @Test(dataProvider = "sessionZonesDataProvider")
+    public void testDatetime(ZoneId sessionZone)
+    {
+        Session session = Session.builder(getSession())
+                .setTimeZoneKey(getTimeZoneKey(sessionZone.getId()))
+                .build();
+
+        // TODO (https://github.com/trinodb/trino/issues/5450) Fix DST handling
+        SqlDataTypeTest.create()
+                // before epoch
+                .addRoundTrip("datetime", "CAST('1958-01-01 13:18:03' AS DATETIME)", createTimestampType(0), "TIMESTAMP '1958-01-01 13:18:03'")
+                // after epoch
+                .addRoundTrip("datetime", "CAST('2019-03-18 10:01:17' AS DATETIME)", createTimestampType(0), "TIMESTAMP '2019-03-18 10:01:17'")
+                // time doubled in JVM zone
+                .addRoundTrip("datetime", "CAST('2018-10-28 01:33:17' AS DATETIME)", createTimestampType(0), "TIMESTAMP '2018-10-28 01:33:17'")
+                // time double in Vilnius
+                .addRoundTrip("datetime", "CAST('2018-10-28 03:33:33' AS DATETIME)", createTimestampType(0), "TIMESTAMP '2018-10-28 03:33:33'")
+                // epoch
+//                .addRoundTrip("datetime", "CAST('1970-01-01 00:00:00' AS DATETIME)", createTimestampType(0), "TIMESTAMP '1970-01-01 00:00:00'")
+//                .addRoundTrip("datetime", "CAST('1970-01-01 00:13:42' AS DATETIME)", createTimestampType(0), "TIMESTAMP '1970-01-01 00:13:42'")
+//                .addRoundTrip("datetime", "CAST('2018-04-01 02:13:55' AS DATETIME)", createTimestampType(0), "TIMESTAMP '2018-04-01 02:13:55'")
+                // time gap in Vilnius
+                .addRoundTrip("datetime", "CAST('2018-03-25 03:17:17.000000' AS DATETIME)", createTimestampType(0), "TIMESTAMP '2018-03-25 03:17:17'")
+                // time gap in Kathmandu
+                .addRoundTrip("datetime", "CAST('1986-01-01 00:13:07.000000' AS DATETIME)", createTimestampType(0), "TIMESTAMP '1986-01-01 00:13:07'")
+
+                // same as above but with higher precision
+                .addRoundTrip("datetime(6)", "CAST('1958-01-01 13:18:03.123456' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1958-01-01 13:18:03.123456'")
+                .addRoundTrip("datetime(6)", "CAST('2019-03-18 10:01:17.987654' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '2019-03-18 10:01:17.987654'")
+                .addRoundTrip("datetime(6)", "CAST('2018-10-28 01:33:17.456789' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '2018-10-28 01:33:17.456789'")
+                .addRoundTrip("datetime(6)", "CAST('2018-10-28 03:33:33.333333' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '2018-10-28 03:33:33.333333'")
+//                .addRoundTrip("datetime(6)", "CAST('1970-01-01 00:00:00.000000' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1970-01-01 00:00:00.000000'")
+//                .addRoundTrip("datetime(6)", "CAST('1970-01-01 00:13:42.000001' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1970-01-01 00:13:42.000001'")
+//                .addRoundTrip("datetime(6)", "CAST('2018-04-01 02:13:55.123456' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '2018-04-01 02:13:55.123456'")
+                .addRoundTrip("datetime(6)", "CAST('2018-03-25 03:17:17.000000' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '2018-03-25 03:17:17.000000'")
+                .addRoundTrip("datetime(6)", "CAST('1986-01-01 00:13:07.000000' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1986-01-01 00:13:07.000000'")
+
+                // negative epoch
+                .addRoundTrip("datetime(6)", "CAST('1969-12-31 23:59:59.999995' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999995'")
+                .addRoundTrip("datetime(6)", "CAST('1969-12-31 23:59:59.999949' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999949'")
+                .addRoundTrip("datetime(6)", "CAST('1969-12-31 23:59:59.999994' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999994'")
+
+                // min value in MemSQL
+                .addRoundTrip("datetime", "CAST('1000-01-01 00:00:00' AS DATETIME)", createTimestampType(0), "TIMESTAMP '1000-01-01 00:00:00'")
+                .addRoundTrip("datetime(6)", "CAST('1000-01-01 00:00:00.000000' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '1000-01-01 00:00:00.000000'")
+
+                // max value in MemSQL
+                .addRoundTrip("datetime", "CAST('9999-12-31 23:59:59' AS DATETIME)", createTimestampType(0), "TIMESTAMP '9999-12-31 23:59:59'")
+                .addRoundTrip("datetime(6)", "CAST('9999-12-31 23:59:59.999999' AS DATETIME(6))", createTimestampType(6), "TIMESTAMP '9999-12-31 23:59:59.999999'")
+
+                // null
+                .addRoundTrip("datetime", "NULL", createTimestampType(0), "CAST(NULL AS TIMESTAMP(0))")
+                .addRoundTrip("datetime(6)", "NULL", createTimestampType(6), "CAST(NULL AS TIMESTAMP(6))")
+
+                .execute(getQueryRunner(), session, memSqlCreateAndInsert("tpch.test_datetime"));
+    }
+
+    @Test(dataProvider = "sessionZonesDataProvider")
+    public void testTimestamp(ZoneId sessionZone)
+    {
+        Session session = Session.builder(getSession())
+                .setTimeZoneKey(getTimeZoneKey(sessionZone.getId()))
+                .build();
+
+        // TODO (https://github.com/trinodb/trino/issues/5450) Fix DST handling
+        SqlDataTypeTest.create()
+                // before epoch doesn't exist because min timestamp value is 1970-01-01 in MemSQL
+                // after epoch
+                .addRoundTrip("timestamp", toTimestamp("2019-03-18 10:01:17"), createTimestampType(0), "TIMESTAMP '2019-03-18 10:01:17'")
+                // time doubled in JVM zone
+                .addRoundTrip("timestamp", toTimestamp("2018-10-28 01:33:17"), createTimestampType(0), "TIMESTAMP '2018-10-28 01:33:17'")
+                // time double in Vilnius
+                .addRoundTrip("timestamp", toTimestamp("2018-10-28 03:33:33"), createTimestampType(0), "TIMESTAMP '2018-10-28 03:33:33'")
+                // epoch
+//                .addRoundTrip("timestamp", toTimestamp("1970-01-01 00:00:00"), createTimestampType(0), "TIMESTAMP '1970-01-01 00:00:00'")
+//                .addRoundTrip("timestamp", toTimestamp("1970-01-01 00:13:42"), createTimestampType(0), "TIMESTAMP '1970-01-01 00:13:42'")
+//                .addRoundTrip("timestamp", toTimestamp("2018-04-01 02:13:55"), createTimestampType(0), "TIMESTAMP '2018-04-01 02:13:55'")
+                // time gap in Vilnius
+                .addRoundTrip("timestamp", toTimestamp("2018-03-25 03:17:17.000000"), createTimestampType(0), "TIMESTAMP '2018-03-25 03:17:17'")
+
+                // same as above but with higher precision
+                .addRoundTrip("timestamp(6)", toLongTimestamp("2019-03-18 10:01:17.987654"), createTimestampType(6), "TIMESTAMP '2019-03-18 10:01:17.987654'")
+                .addRoundTrip("timestamp(6)", toLongTimestamp("2018-10-28 01:33:17.456789"), createTimestampType(6), "TIMESTAMP '2018-10-28 01:33:17.456789'")
+                .addRoundTrip("timestamp(6)", toLongTimestamp("2018-10-28 03:33:33.333333"), createTimestampType(6), "TIMESTAMP '2018-10-28 03:33:33.333333'")
+//                .addRoundTrip("timestamp(6)", toLongTimestamp("1970-01-01 00:00:00.000000"), createTimestampType(6), "TIMESTAMP '1970-01-01 00:00:00.000000'")
+//                .addRoundTrip("timestamp(6)", toLongTimestamp("1970-01-01 00:13:42.000001"), createTimestampType(6), "TIMESTAMP '1970-01-01 00:13:42.000001'")
+//                .addRoundTrip("timestamp(6)", toLongTimestamp("2018-04-01 02:13:55.123456"), createTimestampType(6), "TIMESTAMP '2018-04-01 02:13:55.123456'")
+                .addRoundTrip("timestamp(6)", toLongTimestamp("2018-03-25 03:17:17.000000"), createTimestampType(6), "TIMESTAMP '2018-03-25 03:17:17.000000'")
+
+                // min value in MemSQL
+//                .addRoundTrip("timestamp", toTimestamp("1970-01-01 00:00:01"), createTimestampType(0), "TIMESTAMP '1970-01-01 00:00:01'")
+//                .addRoundTrip("timestamp(6)", toLongTimestamp("1970-01-01 00:00:01.000000"), createTimestampType(6), "TIMESTAMP '1970-01-01 00:00:01.000000'")
+
+                // max value in MemSQL
+                .addRoundTrip("timestamp", toTimestamp("2038-01-19 03:14:07"), createTimestampType(0), "TIMESTAMP '2038-01-19 03:14:07'")
+                .addRoundTrip("timestamp(6)", toLongTimestamp("2038-01-19 03:14:07.999999"), createTimestampType(6), "TIMESTAMP '2038-01-19 03:14:07.999999'")
+
+                // null
+                .addRoundTrip("timestamp", "NULL", createTimestampType(0), "CAST(NULL AS TIMESTAMP(0))")
+                .addRoundTrip("timestamp(6)", "NULL", createTimestampType(6), "CAST(NULL AS TIMESTAMP(6))")
+
+                .execute(getQueryRunner(), session, memSqlCreateAndInsert("tpch.test_timestamp"));
+    }
+
+    @Test(dataProvider = "sessionZonesDataProvider")
+    public void testTimestampWrite(ZoneId sessionZone)
+    {
+        Session session = Session.builder(getSession())
+                .setTimeZoneKey(getTimeZoneKey(sessionZone.getId()))
+                .build();
+
+        // TODO (https://github.com/trinodb/trino/issues/5450) Fix DST handling
+        SqlDataTypeTest.create()
+                // without precision
+                .addRoundTrip("TIMESTAMP '2021-10-21 12:34:56.123456'", "TIMESTAMP '2021-10-21 12:34:56.123456'")
+                // before epoch
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '1958-01-01 13:18:03'", createTimestampType(0), "TIMESTAMP '1958-01-01 13:18:03'")
+                // after epoch
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '2019-03-18 10:01:17'", createTimestampType(0), "TIMESTAMP '2019-03-18 10:01:17'")
+                // time doubled in JVM zone
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '2018-10-28 01:33:17'", createTimestampType(0), "TIMESTAMP '2018-10-28 01:33:17'")
+                // time double in Vilnius
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '2018-10-28 03:33:33'", createTimestampType(0), "TIMESTAMP '2018-10-28 03:33:33'")
+                // epoch
+//                .addRoundTrip("timestamp(0)", "TIMESTAMP '1970-01-01 00:00:00'", createTimestampType(0), "TIMESTAMP '1970-01-01 00:00:00'")
+//                .addRoundTrip("timestamp(0)", "TIMESTAMP '1970-01-01 00:13:42'", createTimestampType(0), "TIMESTAMP '1970-01-01 00:13:42'")
+//                .addRoundTrip("timestamp(0)", "TIMESTAMP '2018-04-01 02:13:55'", createTimestampType(0), "TIMESTAMP '2018-04-01 02:13:55'")
+                // time gap in Vilnius
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '2018-03-25 03:17:17.000000'", createTimestampType(0), "TIMESTAMP '2018-03-25 03:17:17'")
+                // time gap in Kathmandu
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '1986-01-01 00:13:07.000000'", createTimestampType(0), "TIMESTAMP '1986-01-01 00:13:07'")
+
+                // same as above but with higher precision
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1958-01-01 13:18:03.123456'", createTimestampType(6), "TIMESTAMP '1958-01-01 13:18:03.123456'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '2019-03-18 10:01:17.987654'", createTimestampType(6), "TIMESTAMP '2019-03-18 10:01:17.987654'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '2018-10-28 01:33:17.456789'", createTimestampType(6), "TIMESTAMP '2018-10-28 01:33:17.456789'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '2018-10-28 03:33:33.333333'", createTimestampType(6), "TIMESTAMP '2018-10-28 03:33:33.333333'")
+//                .addRoundTrip("timestamp(6)", "TIMESTAMP '1970-01-01 00:00:00.000000'", createTimestampType(6), "TIMESTAMP '1970-01-01 00:00:00.000000'")
+//                .addRoundTrip("timestamp(6)", "TIMESTAMP '1970-01-01 00:13:42.000001'", createTimestampType(6), "TIMESTAMP '1970-01-01 00:13:42.000001'")
+//                .addRoundTrip("timestamp(6)", "TIMESTAMP '2018-04-01 02:13:55.123456'", createTimestampType(6), "TIMESTAMP '2018-04-01 02:13:55.123456'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '2018-03-25 03:17:17.000000'", createTimestampType(6), "TIMESTAMP '2018-03-25 03:17:17.000000'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1986-01-01 00:13:07.000000'", createTimestampType(6), "TIMESTAMP '1986-01-01 00:13:07.000000'")
+
+                // negative epoch
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1969-12-31 23:59:59.999995'", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999995'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1969-12-31 23:59:59.999949'", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999949'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1969-12-31 23:59:59.999994'", createTimestampType(6), "TIMESTAMP '1969-12-31 23:59:59.999994'")
+
+                // min value in MemSQL
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '1000-01-01 00:00:00'", createTimestampType(0), "TIMESTAMP '1000-01-01 00:00:00'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '1000-01-01 00:00:00.000000'", createTimestampType(6), "TIMESTAMP '1000-01-01 00:00:00.000000'")
+
+                // max value in MemSQL
+                .addRoundTrip("timestamp(0)", "TIMESTAMP '9999-12-31 23:59:59'", createTimestampType(0), "TIMESTAMP '9999-12-31 23:59:59'")
+                .addRoundTrip("timestamp(6)", "TIMESTAMP '9999-12-31 23:59:59.999999'", createTimestampType(6), "TIMESTAMP '9999-12-31 23:59:59.999999'")
+
+                // null
+                .addRoundTrip("timestamp(0)", "NULL", createTimestampType(0), "CAST(NULL AS TIMESTAMP(0))")
+                .addRoundTrip("timestamp(6)", "NULL", createTimestampType(6), "CAST(NULL AS TIMESTAMP(6))")
+
+                .execute(getQueryRunner(), session, trinoCreateAsSelect(session, "tpch.test_datetime"))
+                .execute(getQueryRunner(), session, trinoCreateAndInsert(session, "tpch.test_datetime"));
+    }
+
+    @DataProvider
+    public Object[][] sessionZonesDataProvider()
+    {
+        return new Object[][] {
+                {UTC},
+                {ZoneId.systemDefault()},
+                // no DST in 1970, but has DST in later years (e.g. 2018)
+                {ZoneId.of("Europe/Vilnius")},
+                // minutes offset change since 1970-01-01, no DST
+                {ZoneId.of("Asia/Kathmandu")},
+                {ZoneId.of(TestingSession.DEFAULT_TIME_ZONE_KEY.getId())},
+        };
+    }
+
+    @Test(dataProvider = "unsupportedDateTimePrecisions")
+    public void testUnsupportedDateTimePrecision(int precision)
+    {
+        // This test should be fixed if future MemSQL supports those precisions
+        assertThatThrownBy(() -> memSqlServer.execute(format("CREATE TABLE test_unsupported_timestamp_precision (col1 TIMESTAMP(%s))", precision)))
+                .hasMessageContaining("Feature 'TIMESTAMP type with precision other than 0 or 6' is not supported by MemSQL.");
+
+        assertThatThrownBy(() -> memSqlServer.execute(format("CREATE TABLE test_unsupported_datetime_precision (col1 DATETIME(%s))", precision)))
+                .hasMessageContaining("Feature 'DATETIME type with precision other than 0 or 6' is not supported by MemSQL.");
+    }
+
+    @DataProvider
+    public Object[][] unsupportedDateTimePrecisions()
+    {
+        return new Object[][] {
+                {1},
+                {2},
+                {3},
+                {4},
+                {5},
+                {7},
+                {8},
+                {9},
+        };
     }
 
     @Test
     public void testJson()
     {
-        jsonTestCases(memSqlJsonDataType(value -> "JSON " + formatStringLiteral(value)))
+        SqlDataTypeTest.create()
+                .addRoundTrip("json", "json_parse('{}')", JSON, "JSON '{}'")
+                .addRoundTrip("json", "null", JSON, "CAST(NULL AS json)")
+                .addRoundTrip("json", "json_parse('null')", JSON, "JSON 'null'")
+                .addRoundTrip("json", "123.4", JSON, "JSON '123.4'")
+                .addRoundTrip("json", "'abc'", JSON, "JSON '\"abc\"'")
+                .addRoundTrip("json", "'text with '' apostrophes'", JSON, "JSON '\"text with '' apostrophes\"'")
+                .addRoundTrip("json", "''", JSON, "JSON '\"\"'")
+                .addRoundTrip("json", "json_parse('{\"a\":1,\"b\":2}')", JSON, "JSON '{\"a\":1,\"b\":2}'")
+                .addRoundTrip("json", "json_parse('{\"a\":[1,2,3],\"b\":{\"aa\":11,\"bb\":[{\"a\":1,\"b\":2},{\"a\":0}]}}')", JSON, "JSON '{\"a\":[1,2,3],\"b\":{\"aa\":11,\"bb\":[{\"a\":1,\"b\":2},{\"a\":0}]}}'")
+                .addRoundTrip("json", "json_parse('[]')", JSON, "JSON '[]'")
                 .execute(getQueryRunner(), trinoCreateAsSelect("trino_test_json"));
-        // MemSQL doesn't support CAST to JSON but accepts string literals as JSON values
-        jsonTestCases(memSqlJsonDataType(value -> format("%s", formatStringLiteral(value))))
-                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.mysql_test_json"));
-    }
 
-    private DataTypeTest jsonTestCases(DataType<String> jsonDataType)
-    {
-        return DataTypeTest.create()
-                .addRoundTrip(jsonDataType, "{}")
-                .addRoundTrip(jsonDataType, null)
-                .addRoundTrip(jsonDataType, "null")
-                .addRoundTrip(jsonDataType, "123.4")
-                .addRoundTrip(jsonDataType, "\"abc\"")
-                .addRoundTrip(jsonDataType, "\"text with ' apostrophes\"")
-                .addRoundTrip(jsonDataType, "\"\"")
-                .addRoundTrip(jsonDataType, "{\"a\":1,\"b\":2}")
-                .addRoundTrip(jsonDataType, "{\"a\":[1,2,3],\"b\":{\"aa\":11,\"bb\":[{\"a\":1,\"b\":2},{\"a\":0}]}}")
-                .addRoundTrip(jsonDataType, "[]");
+        // MemSQL doesn't support CAST to JSON but accepts string literals as JSON values
+        SqlDataTypeTest.create()
+                .addRoundTrip("json", "'{}'", JSON, "JSON '{}'")
+                .addRoundTrip("json", "null", JSON, "CAST(NULL AS json)")
+                .addRoundTrip("json", "'null'", JSON, "JSON 'null'")
+                .addRoundTrip("json", "'123.4'", JSON, "JSON '123.4'")
+                .addRoundTrip("json", "'\"abc\"'", JSON, "JSON '\"abc\"'")
+                .addRoundTrip("json", "'\"text with '' apostrophes\"'", JSON, "JSON '\"text with '' apostrophes\"'")
+                .addRoundTrip("json", "'\"\"'", JSON, "JSON '\"\"'")
+                .addRoundTrip("json", "'{\"a\":1,\"b\":2}'", JSON, "JSON '{\"a\":1,\"b\":2}'")
+                .addRoundTrip("json", "'{\"a\":[1,2,3],\"b\":{\"aa\":11,\"bb\":[{\"a\":1,\"b\":2},{\"a\":0}]}}'", JSON, "JSON '{\"a\":[1,2,3],\"b\":{\"aa\":11,\"bb\":[{\"a\":1,\"b\":2},{\"a\":0}]}}'")
+                .addRoundTrip("json", "'[]'", JSON, "JSON '[]'")
+                .execute(getQueryRunner(), memSqlCreateAndInsert("tpch.mysql_test_json"));
     }
 
     private void testUnsupportedDataType(String databaseDataType)
@@ -573,23 +919,13 @@ public class TestMemSqlTypeMapping
         return new CreateAndInsertDataSetup(memSqlServer::execute, tableNamePrefix);
     }
 
-    private static DataType<LocalDate> memSqlDateDataType(Function<LocalDate, String> toLiteral)
+    private static String toTimestamp(String value)
     {
-        return dataType("date", DATE, toLiteral);
+        return format("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS')", value);
     }
 
-    private static DataType<String> memSqlJsonDataType(Function<String, String> toLiteral)
+    private static String toLongTimestamp(String value)
     {
-        return dataType("json", JSON, toLiteral);
-    }
-
-    private static DataType<Float> memSqlFloatDataType()
-    {
-        return dataType("float", REAL, Object::toString);
-    }
-
-    private static DataType<Double> memSqlDoubleDataType()
-    {
-        return dataType("double precision", DOUBLE, Object::toString);
+        return format("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS.FF6')", value);
     }
 }

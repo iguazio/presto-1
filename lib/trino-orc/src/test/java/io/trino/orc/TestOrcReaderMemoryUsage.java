@@ -13,7 +13,6 @@
  */
 package io.trino.orc;
 
-import io.trino.metadata.Metadata;
 import io.trino.orc.metadata.CompressionKind;
 import io.trino.spi.Page;
 import io.trino.spi.type.StandardTypes;
@@ -33,7 +32,7 @@ import java.io.IOException;
 import java.util.HashMap;
 
 import static io.airlift.testing.Assertions.assertGreaterThan;
-import static io.trino.metadata.MetadataManager.createTestMetadataManager;
+import static io.airlift.testing.Assertions.assertGreaterThanOrEqual;
 import static io.trino.orc.OrcReader.INITIAL_BATCH_SIZE;
 import static io.trino.orc.OrcReader.MAX_BATCH_SIZE;
 import static io.trino.orc.OrcTester.Format.ORC_12;
@@ -42,12 +41,11 @@ import static io.trino.orc.OrcTester.createOrcRecordWriter;
 import static io.trino.orc.OrcTester.createSettableStructObjectInspector;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.VarcharType.VARCHAR;
+import static io.trino.type.InternalTypeManager.TESTING_TYPE_MANAGER;
 import static org.testng.Assert.assertEquals;
 
 public class TestOrcReaderMemoryUsage
 {
-    private static final Metadata METADATA = createTestMetadataManager();
-
     @Test
     public void testVarcharTypeWithoutNulls()
             throws Exception
@@ -78,8 +76,8 @@ public class TestOrcReaderMemoryUsage
 
                 // StripeReader memory should increase after reading a block.
                 assertGreaterThan(reader.getCurrentStripeRetainedSizeInBytes(), stripeReaderRetainedSize);
-                // There are no local buffers needed.
-                assertEquals(reader.getStreamReaderRetainedSizeInBytes() - streamReaderRetainedSize, 0L);
+                // There may be some extra local buffers needed for dictionary data.
+                assertGreaterThanOrEqual(reader.getStreamReaderRetainedSizeInBytes(), streamReaderRetainedSize);
                 // The total retained size and system memory usage should be greater than 0 byte because of the instance sizes.
                 assertGreaterThan(reader.getRetainedSizeInBytes() - readerRetainedSize, 0L);
                 assertGreaterThan(reader.getSystemMemoryUsage() - readerSystemMemoryUsage, 0L);
@@ -142,7 +140,7 @@ public class TestOrcReaderMemoryUsage
     public void testMapTypeWithNulls()
             throws Exception
     {
-        Type mapType = METADATA.getType(new TypeSignature(StandardTypes.MAP, TypeSignatureParameter.typeParameter(BIGINT.getTypeSignature()), TypeSignatureParameter.typeParameter(BIGINT.getTypeSignature())));
+        Type mapType = TESTING_TYPE_MANAGER.getType(new TypeSignature(StandardTypes.MAP, TypeSignatureParameter.typeParameter(BIGINT.getTypeSignature()), TypeSignatureParameter.typeParameter(BIGINT.getTypeSignature())));
 
         int rows = 10000;
         OrcRecordReader reader = null;

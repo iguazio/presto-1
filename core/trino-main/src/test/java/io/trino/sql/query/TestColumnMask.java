@@ -29,20 +29,27 @@ import io.trino.spi.type.BigintType;
 import io.trino.spi.type.VarcharType;
 import io.trino.testing.LocalQueryRunner;
 import io.trino.testing.TestingAccessControlManager;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.util.Optional;
 
+import static io.trino.connector.MockConnectorEntities.TPCH_NATION_WITH_HIDDEN_COLUMN;
+import static io.trino.connector.MockConnectorEntities.TPCH_WITH_HIDDEN_COLUMN_DATA;
 import static io.trino.plugin.tpch.TpchMetadata.TINY_SCHEMA_NAME;
 import static io.trino.testing.TestingAccessControlManager.TestingPrivilegeType.SELECT_COLUMN;
 import static io.trino.testing.TestingAccessControlManager.privilege;
 import static io.trino.testing.TestingSession.testSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS;
 
-@Test(singleThreaded = true)
+@TestInstance(PER_CLASS)
+@Execution(ExecutionMode.SAME_THREAD)
 public class TestColumnMask
 {
     private static final String CATALOG = "local";
@@ -60,7 +67,7 @@ public class TestColumnMask
     private QueryAssertions assertions;
     private TestingAccessControlManager accessControl;
 
-    @BeforeClass
+    @BeforeAll
     public void init()
     {
         LocalQueryRunner runner = LocalQueryRunner.builder(SESSION).build();
@@ -87,7 +94,7 @@ public class TestColumnMask
                         new ConnectorMaterializedViewDefinition.Column("regionkey", BigintType.BIGINT.getTypeId()),
                         new ConnectorMaterializedViewDefinition.Column("comment", VarcharType.createVarcharType(152).getTypeId())),
                 Optional.empty(),
-                VIEW_OWNER,
+                Optional.of(VIEW_OWNER),
                 ImmutableMap.of());
 
         ConnectorMaterializedViewDefinition freshMaterializedView = new ConnectorMaterializedViewDefinition(
@@ -101,15 +108,42 @@ public class TestColumnMask
                         new ConnectorMaterializedViewDefinition.Column("regionkey", BigintType.BIGINT.getTypeId()),
                         new ConnectorMaterializedViewDefinition.Column("comment", VarcharType.createVarcharType(152).getTypeId())),
                 Optional.empty(),
-                VIEW_OWNER,
+                Optional.of(VIEW_OWNER),
+                ImmutableMap.of());
+
+        ConnectorMaterializedViewDefinition materializedViewWithCasts = new ConnectorMaterializedViewDefinition(
+                "SELECT nationkey, cast(name as varchar(1)) as name, regionkey, comment FROM local.tiny.nation",
+                Optional.of(new CatalogSchemaTableName("local", "tiny", "nation")),
+                Optional.empty(),
+                Optional.empty(),
+                ImmutableList.of(
+                        new ConnectorMaterializedViewDefinition.Column("nationkey", BigintType.BIGINT.getTypeId()),
+                        new ConnectorMaterializedViewDefinition.Column("name", VarcharType.createVarcharType(2).getTypeId()),
+                        new ConnectorMaterializedViewDefinition.Column("regionkey", BigintType.BIGINT.getTypeId()),
+                        new ConnectorMaterializedViewDefinition.Column("comment", VarcharType.createVarcharType(152).getTypeId())),
+                Optional.empty(),
+                Optional.of(VIEW_OWNER),
                 ImmutableMap.of());
 
         MockConnectorFactory mock = MockConnectorFactory.builder()
+                .withGetColumns(schemaTableName -> {
+                    if (schemaTableName.equals(new SchemaTableName("tiny", "nation_with_hidden_column"))) {
+                        return TPCH_NATION_WITH_HIDDEN_COLUMN;
+                    }
+                    throw new UnsupportedOperationException();
+                })
+                .withData(schemaTableName -> {
+                    if (schemaTableName.equals(new SchemaTableName("tiny", "nation_with_hidden_column"))) {
+                        return TPCH_WITH_HIDDEN_COLUMN_DATA;
+                    }
+                    throw new UnsupportedOperationException();
+                })
                 .withGetViews((s, prefix) -> ImmutableMap.of(
                         new SchemaTableName("default", "nation_view"), view))
                 .withGetMaterializedViews((s, prefix) -> ImmutableMap.of(
                         new SchemaTableName("default", "nation_materialized_view"), materializedView,
-                        new SchemaTableName("default", "nation_fresh_materialized_view"), freshMaterializedView))
+                        new SchemaTableName("default", "nation_fresh_materialized_view"), freshMaterializedView,
+                        new SchemaTableName("default", "materialized_view_with_casts"), materializedViewWithCasts))
                 .build();
 
         runner.createCatalog(MOCK_CATALOG, mock, ImmutableMap.of());
@@ -118,7 +152,7 @@ public class TestColumnMask
         accessControl = assertions.getQueryRunner().getAccessControl();
     }
 
-    @AfterClass(alwaysRun = true)
+    @AfterAll
     public void teardown()
     {
         assertions.close();
@@ -252,6 +286,11 @@ public class TestColumnMask
                 "name",
                 USER,
                 new ViewExpression(USER, Optional.empty(), Optional.empty(), "reverse(name)"));
+        accessControl.columnMask(
+                new QualifiedObjectName(MOCK_CATALOG, "default", "materialized_view_with_casts"),
+                "name",
+                USER,
+                new ViewExpression(USER, Optional.empty(), Optional.empty(), "reverse(name)"));
 
         assertThat(assertions.query(
                 Session.builder(SESSION)
@@ -266,6 +305,13 @@ public class TestColumnMask
                         .build(),
                 "SELECT name FROM mock.default.nation_materialized_view WHERE nationkey = 1"))
                 .matches("VALUES CAST('ANITNEGRA' AS VARCHAR(25))");
+
+        assertThat(assertions.query(
+                Session.builder(SESSION)
+                        .setIdentity(Identity.forUser(USER).build())
+                        .build(),
+                "SELECT name FROM mock.default.materialized_view_with_casts WHERE nationkey = 1"))
+                .matches("VALUES CAST('RA' AS VARCHAR(2))");
     }
 
     @Test
@@ -653,5 +699,31 @@ public class TestColumnMask
                 USER,
                 new ViewExpression(USER, Optional.empty(), Optional.empty(), "(SELECT orderstatus FROM local.tiny.orders)"));
         assertThat(assertions.query("SELECT orderkey FROM orders WHERE orderkey = 1")).matches("VALUES BIGINT '1'");
+    }
+
+    @Test
+    public void testColumnMaskWithHiddenColumns()
+    {
+        accessControl.reset();
+        accessControl.columnMask(
+                new QualifiedObjectName(MOCK_CATALOG, "tiny", "nation_with_hidden_column"),
+                "name",
+                USER,
+                new ViewExpression(USER, Optional.empty(), Optional.empty(), "'POLAND'"));
+
+        assertions.query("SELECT * FROM mock.tiny.nation_with_hidden_column WHERE nationkey = 1")
+                .assertThat()
+                .skippingTypesCheck()
+                .matches("VALUES (BIGINT '1', 'POLAND', BIGINT '1', 'al foxes promise slyly according to the regular accounts. bold requests alon')");
+        assertions.query("SELECT DISTINCT name FROM mock.tiny.nation_with_hidden_column WHERE nationkey = 1")
+                .assertThat()
+                .skippingTypesCheck()
+                .matches("VALUES 'POLAND'");
+        assertThatThrownBy(() -> assertions.query("INSERT INTO mock.tiny.nation_with_hidden_column SELECT * FROM mock.tiny.nation_with_hidden_column"))
+                .hasMessage("Insert into table with column masks is not supported");
+        assertThatThrownBy(() -> assertions.query("DELETE FROM mock.tiny.nation_with_hidden_column"))
+                .hasMessage("line 1:1: Delete from table with column mask");
+        assertThatThrownBy(() -> assertions.query("UPDATE mock.tiny.nation_with_hidden_column SET name = 'X'"))
+                .hasMessage("line 1:1: Updating a table with column masks is not supported");
     }
 }

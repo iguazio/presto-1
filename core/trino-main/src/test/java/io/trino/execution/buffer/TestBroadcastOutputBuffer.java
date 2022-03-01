@@ -495,7 +495,7 @@ public class TestBroadcastOutputBuffer
         assertBufferResultEquals(TYPES, getFuture(future, NO_WAIT), bufferResult(0, createPage(33)));
     }
 
-    @Test(expectedExceptions = IllegalStateException.class, expectedExceptionsMessageRegExp = ".*does not contain.*\\[0]")
+    @Test
     public void testSetFinalBuffersWihtoutDeclaringUsedBuffer()
     {
         BroadcastOutputBuffer buffer = createBroadcastBuffer(createInitialEmptyOutputBuffers(BROADCAST), sizeOfPages(10));
@@ -518,10 +518,12 @@ public class TestBroadcastOutputBuffer
         buffer.abort(FIRST);
 
         // set final buffers to a set that does not contain the buffer, which will fail
-        buffer.setOutputBuffers(createInitialEmptyOutputBuffers(BROADCAST).withNoMoreBufferIds());
+        assertThatThrownBy(() -> buffer.setOutputBuffers(createInitialEmptyOutputBuffers(BROADCAST).withNoMoreBufferIds()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageMatching(".*does not contain.*\\[0]");
     }
 
-    @Test(expectedExceptions = IllegalStateException.class, expectedExceptionsMessageRegExp = "No more buffers already set")
+    @Test
     public void testUseUndeclaredBufferAfterFinalBuffersSet()
     {
         BroadcastOutputBuffer buffer = createBroadcastBuffer(
@@ -532,7 +534,9 @@ public class TestBroadcastOutputBuffer
         assertFalse(buffer.isFinished());
 
         // get a page from a buffer that was not declared, which will fail
-        buffer.get(SECOND, 0L, sizeOfPages(1));
+        assertThatThrownBy(() -> buffer.get(SECOND, 0L, sizeOfPages(1)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("No more buffers already set");
     }
 
     @Test
@@ -1006,7 +1010,7 @@ public class TestBroadcastOutputBuffer
         AggregatedMemoryContext memoryContext = newRootAggregatedMemoryContext(reservationHandler, 0L);
 
         Page page = createPage(1);
-        long pageSize = serializePage(page).getRetainedSizeInBytes();
+        long pageSize = serializePage(page).getRetainedSize();
 
         // create a buffer that can only hold two pages
         BroadcastOutputBuffer buffer = createBroadcastBuffer(createInitialEmptyOutputBuffers(BROADCAST), DataSize.ofBytes(pageSize * 2), memoryContext, directExecutor());
@@ -1037,7 +1041,7 @@ public class TestBroadcastOutputBuffer
         AggregatedMemoryContext memoryContext = newRootAggregatedMemoryContext(reservationHandler, 0L);
 
         Page page = createPage(1);
-        long pageSize = serializePage(page).getRetainedSizeInBytes();
+        long pageSize = serializePage(page).getRetainedSize();
 
         // create a buffer that can only hold two pages
         BroadcastOutputBuffer buffer = createBroadcastBuffer(createInitialEmptyOutputBuffers(BROADCAST), DataSize.ofBytes(pageSize * 2), memoryContext, directExecutor());
@@ -1083,7 +1087,7 @@ public class TestBroadcastOutputBuffer
         AggregatedMemoryContext memoryContext = newRootAggregatedMemoryContext(reservationHandler, 0L);
 
         Page page = createPage(1);
-        long pageSize = serializePage(page).getRetainedSizeInBytes();
+        long pageSize = serializePage(page).getRetainedSize();
 
         // create a buffer that can only hold two pages
         BroadcastOutputBuffer buffer = createBroadcastBuffer(createInitialEmptyOutputBuffers(BROADCAST), DataSize.ofBytes(pageSize * 2), memoryContext, directExecutor());
