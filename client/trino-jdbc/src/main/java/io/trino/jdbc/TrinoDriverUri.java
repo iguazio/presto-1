@@ -20,7 +20,7 @@ import com.google.common.collect.Maps;
 import com.google.common.net.HostAndPort;
 import io.trino.client.ClientException;
 import io.trino.client.ClientSelectedRole;
-import io.trino.client.auth.external.DesktopBrowserRedirectHandler;
+import io.trino.client.auth.external.CompositeRedirectHandler;
 import io.trino.client.auth.external.ExternalAuthenticator;
 import io.trino.client.auth.external.HttpTokenPoller;
 import io.trino.client.auth.external.RedirectHandler;
@@ -58,12 +58,14 @@ import static io.trino.jdbc.ConnectionProperties.CLIENT_INFO;
 import static io.trino.jdbc.ConnectionProperties.CLIENT_TAGS;
 import static io.trino.jdbc.ConnectionProperties.DISABLE_COMPRESSION;
 import static io.trino.jdbc.ConnectionProperties.EXTERNAL_AUTHENTICATION;
+import static io.trino.jdbc.ConnectionProperties.EXTERNAL_AUTHENTICATION_REDIRECT_HANDLERS;
 import static io.trino.jdbc.ConnectionProperties.EXTERNAL_AUTHENTICATION_TIMEOUT;
 import static io.trino.jdbc.ConnectionProperties.EXTERNAL_AUTHENTICATION_TOKEN_CACHE;
 import static io.trino.jdbc.ConnectionProperties.EXTRA_CREDENTIALS;
 import static io.trino.jdbc.ConnectionProperties.HTTP_PROXY;
 import static io.trino.jdbc.ConnectionProperties.KERBEROS_CONFIG_PATH;
 import static io.trino.jdbc.ConnectionProperties.KERBEROS_CREDENTIAL_CACHE_PATH;
+import static io.trino.jdbc.ConnectionProperties.KERBEROS_DELEGATION;
 import static io.trino.jdbc.ConnectionProperties.KERBEROS_KEYTAB_PATH;
 import static io.trino.jdbc.ConnectionProperties.KERBEROS_PRINCIPAL;
 import static io.trino.jdbc.ConnectionProperties.KERBEROS_REMOTE_SERVICE_NAME;
@@ -102,8 +104,7 @@ public final class TrinoDriverUri
 
     private static final Splitter QUERY_SPLITTER = Splitter.on('&').omitEmptyStrings();
     private static final Splitter ARG_SPLITTER = Splitter.on('=').limit(2);
-    private static final AtomicReference<RedirectHandler> REDIRECT_HANDLER = new AtomicReference<>(new DesktopBrowserRedirectHandler());
-
+    private static final AtomicReference<RedirectHandler> REDIRECT_HANDLER = new AtomicReference<>(null);
     private final HostAndPort address;
     private final URI uri;
 
@@ -295,7 +296,8 @@ public final class TrinoDriverUri
                         KERBEROS_CONFIG_PATH.getValue(properties),
                         KERBEROS_KEYTAB_PATH.getValue(properties),
                         Optional.ofNullable(KERBEROS_CREDENTIAL_CACHE_PATH.getValue(properties)
-                                .orElseGet(() -> defaultCredentialCachePath().map(File::new).orElse(null))));
+                                .orElseGet(() -> defaultCredentialCachePath().map(File::new).orElse(null))),
+                        KERBEROS_DELEGATION.getRequiredValue(properties));
             }
 
             if (ACCESS_TOKEN.getValue(properties).isPresent()) {
@@ -319,7 +321,14 @@ public final class TrinoDriverUri
 
                 KnownTokenCache knownTokenCache = EXTERNAL_AUTHENTICATION_TOKEN_CACHE.getValue(properties).get();
 
-                ExternalAuthenticator authenticator = new ExternalAuthenticator(REDIRECT_HANDLER.get(), poller, knownTokenCache.create(), timeout);
+                Optional<RedirectHandler> configuredHandler = EXTERNAL_AUTHENTICATION_REDIRECT_HANDLERS.getValue(properties)
+                        .map(CompositeRedirectHandler::new)
+                        .map(RedirectHandler.class::cast);
+
+                RedirectHandler redirectHandler = Optional.ofNullable(REDIRECT_HANDLER.get())
+                        .orElseGet(() -> configuredHandler.orElseThrow(() -> new RuntimeException("External authentication redirect handler is not configured")));
+
+                ExternalAuthenticator authenticator = new ExternalAuthenticator(redirectHandler, poller, knownTokenCache.create(), timeout);
 
                 builder.authenticator(authenticator);
                 builder.addInterceptor(authenticator);

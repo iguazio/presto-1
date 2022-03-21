@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.trino</groupId>
         <artifactId>trino-root</artifactId>
-        <version>359</version>
+        <version>370</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -45,24 +45,17 @@
 
         <dependency>
             <groupId>io.trino</groupId>
-            <artifactId>trino-testing-services</artifactId>
-            <exclusions>
-                <exclusion>
-                    <!-- conflicts with test-scoped dependency declared below -->
-                    <groupId>org.openjdk.jmh</groupId>
-                    <artifactId>jmh-core</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>io.trino</groupId>
             <artifactId>trino-tpch</artifactId>
         </dependency>
 
         <dependency>
             <groupId>io.trino.tpch</groupId>
             <artifactId>tpch</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>concurrent</artifactId>
         </dependency>
 
         <dependency>
@@ -141,16 +134,25 @@
         </dependency>
 
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-        </dependency>
-
-        <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
         </dependency>
 
-        <!-- used by tests but also needed transitively -->
+        <dependency>
+            <!-- trino-testing is on test classpath of many modules. It's important to pull trino-testing-services as a dependency,
+                 because trino-testing-services includes various test-related checkers -->
+            <groupId>io.trino</groupId>
+            <artifactId>trino-testing-services</artifactId>
+            <scope>runtime</scope>
+            <exclusions>
+                <exclusion>
+                    <!-- conflicts with test-scoped dependency declared below -->
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>io.airlift</groupId>
             <artifactId>log-manager</artifactId>

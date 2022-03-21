@@ -18,14 +18,27 @@ import io.airlift.slice.DynamicSliceOutput;
 import io.airlift.slice.Slice;
 import io.airlift.slice.SliceOutput;
 import io.airlift.slice.Slices;
+import io.trino.FeaturesConfig;
+import io.trino.client.NodeVersion;
+import io.trino.metadata.BlockEncodingManager;
+import io.trino.metadata.CatalogManager;
+import io.trino.metadata.DisabledSystemSecurityMetadata;
+import io.trino.metadata.InternalBlockEncodingSerde;
+import io.trino.metadata.MetadataManager;
+import io.trino.metadata.TypeRegistry;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
 import io.trino.spi.block.BlockEncodingSerde;
+import io.trino.spi.block.TestingBlockEncodingSerde;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.MapType;
 import io.trino.spi.type.RowType;
 import io.trino.spi.type.Type;
+import io.trino.spi.type.TypeManager;
 import io.trino.spi.type.TypeOperators;
+import io.trino.sql.PlannerContext;
+import io.trino.sql.planner.LiteralEncoder;
+import io.trino.sql.tree.Expression;
 import io.trino.type.BlockTypeOperators.BlockPositionEqual;
 import io.trino.type.BlockTypeOperators.BlockPositionHashCode;
 import io.trino.type.BlockTypeOperators.BlockPositionIsDistinctFrom;
@@ -40,8 +53,8 @@ import java.util.TreeMap;
 
 import static com.google.common.base.Preconditions.checkState;
 import static io.airlift.testing.Assertions.assertInstanceOf;
+import static io.trino.SessionTestUtils.TEST_SESSION;
 import static io.trino.block.BlockSerdeUtil.writeBlock;
-import static io.trino.metadata.MetadataManager.createTestMetadataManager;
 import static io.trino.operator.OperatorAssertion.toRow;
 import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.spi.connector.SortOrder.ASC_NULLS_LAST;
@@ -52,7 +65,10 @@ import static io.trino.spi.function.InvocationConvention.InvocationArgumentConve
 import static io.trino.spi.function.InvocationConvention.InvocationReturnConvention.FAIL_ON_NULL;
 import static io.trino.spi.function.InvocationConvention.InvocationReturnConvention.NULLABLE_RETURN;
 import static io.trino.spi.function.InvocationConvention.simpleConvention;
+import static io.trino.spi.type.TypeUtils.readNativeValue;
+import static io.trino.sql.ExpressionUtils.isEffectivelyLiteral;
 import static io.trino.testing.TestingConnectorSession.SESSION;
+import static io.trino.transaction.InMemoryTransactionManager.createTestTransactionManager;
 import static io.trino.util.StructuralTestUtil.arrayBlockOf;
 import static io.trino.util.StructuralTestUtil.mapBlockOf;
 import static java.lang.String.format;
@@ -62,10 +78,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 public abstract class AbstractTestType
 {
-    private final BlockEncodingSerde blockEncodingSerde = createTestMetadataManager().getBlockEncodingSerde();
+    private final BlockEncodingSerde blockEncodingSerde = new TestingBlockEncodingSerde();
 
     private final Class<?> objectValueType;
     private final Block testBlock;
@@ -141,6 +158,48 @@ public abstract class AbstractTestType
     }
 
     @Test
+    public void testLiteralFormRecognized()
+    {
+        PlannerContext plannerContext = createPlannerContext();
+        LiteralEncoder literalEncoder = new LiteralEncoder(plannerContext);
+        for (int position = 0; position < testBlock.getPositionCount(); position++) {
+            Object value = readNativeValue(type, testBlock, position);
+            Expression expression = literalEncoder.toExpression(TEST_SESSION, value, type);
+            if (!isEffectivelyLiteral(plannerContext, TEST_SESSION, expression)) {
+                fail(format(
+                        "Expression not recognized literal for value %s at position %s (%s): %s",
+                        value,
+                        position,
+                        type.getObjectValue(SESSION, testBlock, position),
+                        expression));
+            }
+        }
+    }
+
+    protected PlannerContext createPlannerContext()
+    {
+        TypeRegistry typeRegistry = new TypeRegistry(new TypeOperators(), new FeaturesConfig());
+        typeRegistry.addType(type);
+
+        TypeManager typeManager = new InternalTypeManager(typeRegistry);
+        TypeOperators typeOperators = new TypeOperators();
+        MetadataManager metadata = new MetadataManager(
+                new FeaturesConfig(),
+                new DisabledSystemSecurityMetadata(),
+                createTestTransactionManager(new CatalogManager()),
+                typeOperators,
+                new BlockTypeOperators(typeOperators),
+                typeManager,
+                new InternalBlockEncodingSerde(new BlockEncodingManager(), typeManager),
+                NodeVersion.UNKNOWN);
+        return new PlannerContext(
+                metadata,
+                new TypeOperators(),
+                new InternalBlockEncodingSerde(new BlockEncodingManager(), typeManager),
+                typeManager);
+    }
+
+    @Test
     public void testBlock()
     {
         for (Entry<Integer, Object> entry : expectedStackValues.entrySet()) {
@@ -212,7 +271,10 @@ public abstract class AbstractTestType
             assertTrue(blockTypeOperators.generateBlockPositionOrdering(type, DESC_NULLS_LAST).order(block, position, expectedBlock, 0) == 0);
         }
         else {
-            assertThatThrownBy(() -> typeOperators.getComparisonOperator(type, simpleConvention(FAIL_ON_NULL, NEVER_NULL, NEVER_NULL)))
+            assertThatThrownBy(() -> typeOperators.getComparisonUnorderedLastOperator(type, simpleConvention(FAIL_ON_NULL, NEVER_NULL, NEVER_NULL)))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("is not orderable");
+            assertThatThrownBy(() -> typeOperators.getComparisonUnorderedFirstOperator(type, simpleConvention(FAIL_ON_NULL, NEVER_NULL, NEVER_NULL)))
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("is not orderable");
         }

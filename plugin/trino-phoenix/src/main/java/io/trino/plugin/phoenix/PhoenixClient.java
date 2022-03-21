@@ -20,12 +20,13 @@ import io.trino.plugin.jdbc.BaseJdbcClient;
 import io.trino.plugin.jdbc.ColumnMapping;
 import io.trino.plugin.jdbc.ConnectionFactory;
 import io.trino.plugin.jdbc.JdbcColumnHandle;
-import io.trino.plugin.jdbc.JdbcIdentity;
 import io.trino.plugin.jdbc.JdbcOutputTableHandle;
 import io.trino.plugin.jdbc.JdbcSortItem;
 import io.trino.plugin.jdbc.JdbcSplit;
 import io.trino.plugin.jdbc.JdbcTableHandle;
 import io.trino.plugin.jdbc.JdbcTypeHandle;
+import io.trino.plugin.jdbc.LongReadFunction;
+import io.trino.plugin.jdbc.LongWriteFunction;
 import io.trino.plugin.jdbc.ObjectReadFunction;
 import io.trino.plugin.jdbc.ObjectWriteFunction;
 import io.trino.plugin.jdbc.PreparedQuery;
@@ -40,6 +41,7 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.SchemaNotFoundException;
 import io.trino.spi.connector.SchemaTableName;
+import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.CharType;
 import io.trino.spi.type.DecimalType;
@@ -65,7 +67,6 @@ import org.apache.phoenix.iterate.LookAheadResultIterator;
 import org.apache.phoenix.iterate.MapReduceParallelScanGrouper;
 import org.apache.phoenix.iterate.PeekingResultIterator;
 import org.apache.phoenix.iterate.ResultIterator;
-import org.apache.phoenix.iterate.RoundRobinResultIterator;
 import org.apache.phoenix.iterate.SequenceResultIterator;
 import org.apache.phoenix.iterate.TableResultIterator;
 import org.apache.phoenix.jdbc.DelegatePreparedStatement;
@@ -94,6 +95,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -107,13 +111,15 @@ import java.util.function.BiFunction;
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Verify.verify;
+import static io.trino.plugin.jdbc.DecimalConfig.DecimalMapping.ALLOW_OVERFLOW;
+import static io.trino.plugin.jdbc.DecimalSessionSessionProperties.getDecimalDefaultScale;
+import static io.trino.plugin.jdbc.DecimalSessionSessionProperties.getDecimalRounding;
+import static io.trino.plugin.jdbc.DecimalSessionSessionProperties.getDecimalRoundingMode;
 import static io.trino.plugin.jdbc.StandardColumnMappings.bigintColumnMapping;
 import static io.trino.plugin.jdbc.StandardColumnMappings.bigintWriteFunction;
 import static io.trino.plugin.jdbc.StandardColumnMappings.booleanColumnMapping;
 import static io.trino.plugin.jdbc.StandardColumnMappings.booleanWriteFunction;
 import static io.trino.plugin.jdbc.StandardColumnMappings.charWriteFunction;
-import static io.trino.plugin.jdbc.StandardColumnMappings.dateColumnMapping;
-import static io.trino.plugin.jdbc.StandardColumnMappings.dateWriteFunction;
 import static io.trino.plugin.jdbc.StandardColumnMappings.decimalColumnMapping;
 import static io.trino.plugin.jdbc.StandardColumnMappings.defaultCharColumnMapping;
 import static io.trino.plugin.jdbc.StandardColumnMappings.defaultVarcharColumnMapping;
@@ -152,6 +158,8 @@ import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DateType.DATE;
+import static io.trino.spi.type.DecimalType.DEFAULT_PRECISION;
+import static io.trino.spi.type.DecimalType.DEFAULT_SCALE;
 import static io.trino.spi.type.DecimalType.createDecimalType;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
@@ -188,6 +196,9 @@ public class PhoenixClient
 {
     private static final String ROWKEY = "ROWKEY";
     private static final long MAX_TOPN_LIMIT = 2000000;
+
+    private static final String DATE_FORMAT = "y-MM-dd G";
+    private static final DateTimeFormatter LOCAL_DATE_FORMATTER = DateTimeFormatter.ofPattern(DATE_FORMAT);
 
     private final Configuration configuration;
 
@@ -363,6 +374,11 @@ public class PhoenixClient
     @Override
     public Optional<ColumnMapping> toColumnMapping(ConnectorSession session, Connection connection, JdbcTypeHandle typeHandle)
     {
+        Optional<ColumnMapping> mapping = getForcedMappingToVarchar(typeHandle);
+        if (mapping.isPresent()) {
+            return mapping;
+        }
+
         switch (typeHandle.getJdbcType()) {
             case Types.BOOLEAN:
                 return Optional.of(booleanColumnMapping());
@@ -386,8 +402,14 @@ public class PhoenixClient
                 return Optional.of(doubleColumnMapping());
 
             case Types.DECIMAL:
-                int precision = typeHandle.getRequiredColumnSize();
-                int decimalDigits = typeHandle.getDecimalDigits().orElseThrow(() -> new IllegalStateException("decimal digits not present"));
+                Optional<Integer> columnSize = typeHandle.getColumnSize();
+                int precision = columnSize.orElse(DEFAULT_PRECISION);
+                int decimalDigits = typeHandle.getDecimalDigits().orElse(DEFAULT_SCALE);
+                if (getDecimalRounding(session) == ALLOW_OVERFLOW) {
+                    if (columnSize.isEmpty()) {
+                        return Optional.of(decimalColumnMapping(createDecimalType(Decimals.MAX_PRECISION, getDecimalDefaultScale(session)), getDecimalRoundingMode(session)));
+                    }
+                }
                 // TODO does phoenix support negative scale?
                 precision = precision + max(-decimalDigits, 0); // Map decimal(p, -s) (negative scale) to decimal(p+s, 0).
                 if (precision > Decimals.MAX_PRECISION) {
@@ -407,11 +429,15 @@ public class PhoenixClient
                 }
                 return Optional.of(defaultVarcharColumnMapping(typeHandle.getRequiredColumnSize(), true));
 
+            case Types.BINARY:
             case Types.VARBINARY:
                 return Optional.of(varbinaryColumnMapping());
 
             case Types.DATE:
-                return Optional.of(dateColumnMapping());
+                return Optional.of(ColumnMapping.longMapping(
+                        DATE,
+                        dateReadFunction(),
+                        dateWriteFunctionUsingString()));
 
             // TODO add support for TIMESTAMP after Phoenix adds support for LocalDateTime
             case TIMESTAMP:
@@ -437,7 +463,10 @@ public class PhoenixClient
                             return arrayColumnMapping(session, trinoArrayType, jdbcTypeName);
                         });
         }
-        return legacyColumnMapping(session, connection, typeHandle);
+        if (getUnsupportedTypeHandling(session) == CONVERT_TO_VARCHAR) {
+            return mapToUnboundedVarchar(typeHandle);
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -472,7 +501,7 @@ public class PhoenixClient
             if (decimalType.isShort()) {
                 return WriteMapping.longMapping(dataType, shortDecimalWriteFunction(decimalType));
             }
-            return WriteMapping.sliceMapping(dataType, longDecimalWriteFunction(decimalType));
+            return WriteMapping.objectMapping(dataType, longDecimalWriteFunction(decimalType));
         }
 
         if (type instanceof CharType) {
@@ -494,7 +523,7 @@ public class PhoenixClient
         }
 
         if (type == DATE) {
-            return WriteMapping.longMapping("date", dateWriteFunction());
+            return WriteMapping.longMapping("date", dateWriteFunctionUsingString());
         }
         if (TIME.equals(type)) {
             return WriteMapping.longMapping("time", timeWriteFunctionUsingSqlTime());
@@ -509,7 +538,7 @@ public class PhoenixClient
             String elementWriteName = getArrayElementPhoenixTypeName(session, this, elementType);
             return WriteMapping.objectMapping(elementDataType + " ARRAY", arrayWriteFunction(session, elementType, elementWriteName));
         }
-        return legacyToWriteMapping(session, type);
+        throw new TrinoException(NOT_SUPPORTED, "Unsupported column type: " + type.getDisplayName());
     }
 
     @Override
@@ -524,7 +553,7 @@ public class PhoenixClient
         }
 
         try (Connection connection = connectionFactory.openConnection(session)) {
-            final JdbcIdentity identity = JdbcIdentity.from(session);
+            ConnectorIdentity identity = session.getIdentity();
             schema = getIdentifierMapping().toRemoteSchemaName(identity, connection, schema);
             table = getIdentifierMapping().toRemoteTableName(identity, connection, schema, table);
             schema = toPhoenixSchemaName(schema);
@@ -603,6 +632,12 @@ public class PhoenixClient
     }
 
     @Override
+    public void renameSchema(ConnectorSession session, String schemaName, String newSchemaName)
+    {
+        throw new TrinoException(NOT_SUPPORTED, "This connector does not support renaming schemas");
+    }
+
+    @Override
     public Map<String, Object> getTableProperties(ConnectorSession session, JdbcTableHandle handle)
     {
         ImmutableMap.Builder<String, Object> properties = ImmutableMap.builder();
@@ -666,7 +701,35 @@ public class PhoenixClient
         catch (IOException | SQLException e) {
             throw new TrinoException(PHOENIX_METADATA_ERROR, "Couldn't get Phoenix table properties", e);
         }
-        return properties.build();
+        return properties.buildOrThrow();
+    }
+
+    private static LongReadFunction dateReadFunction()
+    {
+        return (resultSet, index) -> {
+            // Convert to LocalDate from java.sql.Date via String because java.sql.Date#toLocalDate() returns wrong results in B.C. dates. -5881579-07-11 -> +5881580-07-11
+            // Phoenix JDBC driver supports getObject(index, LocalDate.class), but it leads to incorrect issues. -5877641-06-23 -> 7642-06-23 & 5881580-07-11 -> 1580-07-11
+            // The current implementation still returns +10 days during julian -> gregorian switch
+            return LocalDate.parse(new SimpleDateFormat(DATE_FORMAT).format(resultSet.getDate(index)), LOCAL_DATE_FORMATTER).toEpochDay();
+        };
+    }
+
+    private static LongWriteFunction dateWriteFunctionUsingString()
+    {
+        return new LongWriteFunction() {
+            @Override
+            public String getBindExpression()
+            {
+                return "TO_DATE(?, 'y-MM-dd G', 'local')";
+            }
+
+            @Override
+            public void set(PreparedStatement statement, int index, long value)
+                    throws SQLException
+            {
+                statement.setString(index, LOCAL_DATE_FORMATTER.format(LocalDate.ofEpochDay(value)));
+            }
+        };
     }
 
     private static ColumnMapping arrayColumnMapping(ConnectorSession session, ArrayType arrayType, String elementJdbcTypeName)
@@ -755,7 +818,7 @@ public class PhoenixClient
                         MapReduceParallelScanGrouper.getInstance());
                 iterators.add(LookAheadResultIterator.wrap(tableResultIterator));
             }
-            ResultIterator iterator = queryPlan.useRoundRobinIterator() ? RoundRobinResultIterator.newIterator(iterators, queryPlan) : ConcatResultIterator.newIterator(iterators);
+            ResultIterator iterator = ConcatResultIterator.newIterator(iterators);
             if (context.getSequenceManager().getSequenceCount() > 0) {
                 iterator = new SequenceResultIterator(iterator, context.getSequenceManager());
             }

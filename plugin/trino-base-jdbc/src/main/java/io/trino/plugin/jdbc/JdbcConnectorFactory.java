@@ -21,7 +21,6 @@ import io.trino.spi.VersionEmbedder;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 import io.trino.spi.type.TypeManager;
 
 import java.util.Map;
@@ -60,12 +59,6 @@ public class JdbcConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new JdbcHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> requiredConfig, ConnectorContext context)
     {
         requireNonNull(requiredConfig, "requiredConfig is null");
@@ -78,7 +71,6 @@ public class JdbcConnectorFactory
                 moduleProvider.getModule(catalogName));
 
         Injector injector = app
-                .strictConfig()
                 .doNotInitializeLogging()
                 .setRequiredConfigurationProperties(requiredConfig)
                 .initialize();

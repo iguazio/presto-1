@@ -42,8 +42,10 @@ public class RowBlockBuilder
     private int[] fieldBlockOffsets;
     private boolean[] rowIsNull;
     private final BlockBuilder[] fieldBlockBuilders;
+    private final SingleRowBlockWriter singleRowBlockWriter;
 
     private boolean currentEntryOpened;
+    private boolean hasNullRow;
 
     public RowBlockBuilder(List<Type> fieldTypes, BlockBuilderStatus blockBuilderStatus, int expectedEntries)
     {
@@ -63,6 +65,7 @@ public class RowBlockBuilder
         this.fieldBlockOffsets = requireNonNull(fieldBlockOffsets, "fieldBlockOffsets is null");
         this.rowIsNull = requireNonNull(rowIsNull, "rowIsNull is null");
         this.fieldBlockBuilders = requireNonNull(fieldBlockBuilders, "fieldBlockBuilders is null");
+        this.singleRowBlockWriter = new SingleRowBlockWriter(fieldBlockBuilders);
     }
 
     private static BlockBuilder[] createFieldBlockBuilders(List<Type> fieldTypes, BlockBuilderStatus blockBuilderStatus, int expectedEntries)
@@ -93,10 +96,17 @@ public class RowBlockBuilder
         return 0;
     }
 
+    @Nullable
     @Override
     protected boolean[] getRowIsNull()
     {
-        return rowIsNull;
+        return hasNullRow ? rowIsNull : null;
+    }
+
+    @Override
+    public boolean mayHaveNull()
+    {
+        return hasNullRow;
     }
 
     @Override
@@ -125,6 +135,7 @@ public class RowBlockBuilder
         if (blockBuilderStatus != null) {
             size += BlockBuilderStatus.INSTANCE_SIZE;
         }
+        size += SingleRowBlockWriter.INSTANCE_SIZE;
         return size;
     }
 
@@ -146,7 +157,8 @@ public class RowBlockBuilder
             throw new IllegalStateException("Expected current entry to be closed but was opened");
         }
         currentEntryOpened = true;
-        return new SingleRowBlockWriter(fieldBlockBuilders[0].getPositionCount(), fieldBlockBuilders);
+        singleRowBlockWriter.setRowIndex(fieldBlockBuilders[0].getPositionCount());
+        return singleRowBlockWriter;
     }
 
     @Override
@@ -158,6 +170,7 @@ public class RowBlockBuilder
 
         entryAdded(false);
         currentEntryOpened = false;
+        singleRowBlockWriter.reset();
         return this;
     }
 
@@ -167,7 +180,6 @@ public class RowBlockBuilder
         if (currentEntryOpened) {
             throw new IllegalStateException("Current entry must be closed before a null can be written");
         }
-
         entryAdded(true);
         return this;
     }
@@ -187,6 +199,7 @@ public class RowBlockBuilder
             fieldBlockOffsets[positionCount + 1] = fieldBlockOffsets[positionCount] + 1;
         }
         rowIsNull[positionCount] = isNull;
+        hasNullRow |= isNull;
         positionCount++;
 
         for (int i = 0; i < numFields; i++) {
@@ -210,65 +223,13 @@ public class RowBlockBuilder
         for (int i = 0; i < numFields; i++) {
             fieldBlocks[i] = fieldBlockBuilders[i].build();
         }
-        return createRowBlockInternal(0, positionCount, rowIsNull, fieldBlockOffsets, fieldBlocks);
+        return createRowBlockInternal(0, positionCount, hasNullRow ? rowIsNull : null, fieldBlockOffsets, fieldBlocks);
     }
 
     @Override
     public String toString()
     {
         return format("RowBlockBuilder{numFields=%d, positionCount=%d", numFields, getPositionCount());
-    }
-
-    @Override
-    public BlockBuilder appendStructure(Block block)
-    {
-        if (!(block instanceof AbstractSingleRowBlock)) {
-            throw new IllegalStateException("Expected AbstractSingleRowBlock");
-        }
-        if (currentEntryOpened) {
-            throw new IllegalStateException("Expected current entry to be closed but was opened");
-        }
-        currentEntryOpened = true;
-
-        int blockPositionCount = block.getPositionCount();
-        if (blockPositionCount != numFields) {
-            throw new IllegalArgumentException(format("block position count (%s) is not equal to number of fields (%s)", blockPositionCount, numFields));
-        }
-        for (int i = 0; i < blockPositionCount; i++) {
-            if (block.isNull(i)) {
-                fieldBlockBuilders[i].appendNull();
-            }
-            else {
-                block.writePositionTo(i, fieldBlockBuilders[i]);
-            }
-        }
-
-        closeEntry();
-        return this;
-    }
-
-    @Override
-    public BlockBuilder appendStructureInternal(Block block, int position)
-    {
-        if (!(block instanceof AbstractRowBlock)) {
-            throw new IllegalArgumentException();
-        }
-
-        AbstractRowBlock rowBlock = (AbstractRowBlock) block;
-        BlockBuilder entryBuilder = this.beginBlockEntry();
-
-        int fieldBlockOffset = rowBlock.getFieldBlockOffset(position);
-        for (int i = 0; i < rowBlock.numFields; i++) {
-            if (rowBlock.getRawFieldBlocks()[i].isNull(fieldBlockOffset)) {
-                entryBuilder.appendNull();
-            }
-            else {
-                rowBlock.getRawFieldBlocks()[i].writePositionTo(fieldBlockOffset, entryBuilder);
-            }
-        }
-
-        closeEntry();
-        return this;
     }
 
     @Override

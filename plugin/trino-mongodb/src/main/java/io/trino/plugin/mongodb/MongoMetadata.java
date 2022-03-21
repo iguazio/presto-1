@@ -22,11 +22,11 @@ import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.ConnectorInsertTableHandle;
 import io.trino.spi.connector.ConnectorMetadata;
-import io.trino.spi.connector.ConnectorNewTableLayout;
 import io.trino.spi.connector.ConnectorOutputMetadata;
 import io.trino.spi.connector.ConnectorOutputTableHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableHandle;
+import io.trino.spi.connector.ConnectorTableLayout;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.Constraint;
@@ -50,6 +50,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.Math.toIntExact;
 import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
@@ -120,7 +121,7 @@ public class MongoMetadata
         for (MongoColumnHandle columnHandle : columns) {
             columnHandles.put(columnHandle.getName(), columnHandle);
         }
-        return columnHandles.build();
+        return columnHandles.buildOrThrow();
     }
 
     @Override
@@ -136,7 +137,7 @@ public class MongoMetadata
                 // table disappeared during listing operation
             }
         }
-        return columns.build();
+        return columns.buildOrThrow();
     }
 
     private List<SchemaTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
@@ -180,7 +181,7 @@ public class MongoMetadata
     }
 
     @Override
-    public ConnectorOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorNewTableLayout> layout)
+    public ConnectorOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorTableLayout> layout)
     {
         List<MongoColumnHandle> columns = buildColumnHandles(tableMetadata);
 
@@ -208,19 +209,16 @@ public class MongoMetadata
 
         return new MongoInsertTableHandle(
                 table.getSchemaTableName(),
-                columns.stream().filter(c -> !c.isHidden()).collect(toList()));
+                columns.stream()
+                        .filter(column -> !column.isHidden())
+                        .peek(column -> validateColumnNameForInsert(column.getName()))
+                        .collect(toImmutableList()));
     }
 
     @Override
     public Optional<ConnectorOutputMetadata> finishInsert(ConnectorSession session, ConnectorInsertTableHandle insertHandle, Collection<Slice> fragments, Collection<ComputedStatistics> computedStatistics)
     {
         return Optional.empty();
-    }
-
-    @Override
-    public boolean usesLegacyTableLayouts()
-    {
-        return false;
     }
 
     @Override
@@ -335,5 +333,12 @@ public class MongoMetadata
         return tableMetadata.getColumns().stream()
                 .map(m -> new MongoColumnHandle(m.getName(), m.getType(), m.isHidden()))
                 .collect(toList());
+    }
+
+    private static void validateColumnNameForInsert(String columnName)
+    {
+        if (columnName.contains("$") || columnName.contains(".")) {
+            throw new IllegalArgumentException("Column name must not contain '$' or '.' for INSERT: " + columnName);
+        }
     }
 }

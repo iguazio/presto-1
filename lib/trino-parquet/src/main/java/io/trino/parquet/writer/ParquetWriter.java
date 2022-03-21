@@ -13,6 +13,7 @@
  */
 package io.trino.parquet.writer;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.DynamicSliceOutput;
 import io.airlift.slice.OutputStreamSliceOutput;
@@ -49,7 +50,7 @@ import static java.lang.Math.min;
 import static java.lang.Math.toIntExact;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.util.Objects.requireNonNull;
-import static org.apache.parquet.column.ParquetProperties.WriterVersion.PARQUET_2_0;
+import static org.apache.parquet.column.ParquetProperties.WriterVersion.PARQUET_1_0;
 
 public class ParquetWriter
         implements Closeable
@@ -57,17 +58,18 @@ public class ParquetWriter
     private static final int INSTANCE_SIZE = ClassLayout.parseClass(ParquetWriter.class).instanceSize();
 
     private static final int CHUNK_MAX_BYTES = toIntExact(DataSize.of(128, MEGABYTE).toBytes());
-    private static final int DEFAULT_ROW_GROUP_MAX_ROW_COUNT = 10_000;
 
-    private final List<ColumnWriter> columnWriters;
     private final OutputStreamSliceOutput outputStream;
     private final ParquetWriterOptions writerOption;
     private final MessageType messageType;
-
+    private final String createdBy;
     private final int chunkMaxLogicalBytes;
+    private final Map<List<String>, Type> primitiveTypes;
+    private final CompressionCodecName compressionCodecName;
 
     private final ImmutableList.Builder<RowGroup> rowGroupBuilder = ImmutableList.builder();
 
+    private List<ColumnWriter> columnWriters;
     private int rows;
     private long bufferedBytes;
     private boolean closed;
@@ -80,27 +82,22 @@ public class ParquetWriter
             MessageType messageType,
             Map<List<String>, Type> primitiveTypes,
             ParquetWriterOptions writerOption,
-            CompressionCodecName compressionCodecName)
+            CompressionCodecName compressionCodecName,
+            String trinoVersion)
     {
         this.outputStream = new OutputStreamSliceOutput(requireNonNull(outputStream, "outputstream is null"));
         this.messageType = requireNonNull(messageType, "messageType is null");
-        requireNonNull(primitiveTypes, "primitiveTypes is null");
+        this.primitiveTypes = requireNonNull(primitiveTypes, "primitiveTypes is null");
         this.writerOption = requireNonNull(writerOption, "writerOption is null");
-        requireNonNull(compressionCodecName, "compressionCodecName is null");
-
-        ParquetProperties parquetProperties = ParquetProperties.builder()
-                .withWriterVersion(PARQUET_2_0)
-                .withPageSize(writerOption.getMaxPageSize())
-                .build();
-
-        this.columnWriters = ParquetWriters.getColumnWriters(messageType, primitiveTypes, parquetProperties, compressionCodecName);
-
+        this.compressionCodecName = requireNonNull(compressionCodecName, "compressionCodecName is null");
+        initColumnWriters();
         this.chunkMaxLogicalBytes = max(1, CHUNK_MAX_BYTES / 2);
+        this.createdBy = formatCreatedBy(requireNonNull(trinoVersion, "trinoVersion is null"));
     }
 
     public long getWrittenBytes()
     {
-        return outputStream.size();
+        return outputStream.longSize();
     }
 
     public long getBufferedBytes()
@@ -127,7 +124,7 @@ public class ParquetWriter
         checkArgument(page.getChannelCount() == columnWriters.size());
 
         while (page != null) {
-            int chunkRows = min(page.getPositionCount(), DEFAULT_ROW_GROUP_MAX_ROW_COUNT);
+            int chunkRows = min(page.getPositionCount(), writerOption.getBatchSize());
             Page chunk = page.getRegion(0, chunkRows);
 
             // avoid chunk with huge logical size
@@ -162,7 +159,7 @@ public class ParquetWriter
         if (bufferedBytes >= writerOption.getMaxRowGroupSize()) {
             columnWriters.forEach(ColumnWriter::close);
             flush();
-            columnWriters.forEach(ColumnWriter::reset);
+            initColumnWriters();
             rows = 0;
             bufferedBytes = columnWriters.stream().mapToLong(ColumnWriter::getBufferedBytes).sum();
         }
@@ -208,7 +205,7 @@ public class ParquetWriter
         List<BufferData> bufferDataList = builder.build();
 
         // update stats
-        long stripeStartOffset = outputStream.size();
+        long stripeStartOffset = outputStream.longSize();
         List<ColumnMetaData> metadatas = bufferDataList.stream()
                 .map(BufferData::getMetaData)
                 .collect(toImmutableList());
@@ -235,11 +232,12 @@ public class ParquetWriter
         createDataOutput(MAGIC).writeData(outputStream);
     }
 
-    static Slice getFooter(List<RowGroup> rowGroups, MessageType messageType)
+    Slice getFooter(List<RowGroup> rowGroups, MessageType messageType)
             throws IOException
     {
         FileMetaData fileMetaData = new FileMetaData();
         fileMetaData.setVersion(1);
+        fileMetaData.setCreated_by(createdBy);
         fileMetaData.setSchema(MessageTypeConverter.toParquetSchema(messageType));
         long totalRows = rowGroups.stream().mapToLong(RowGroup::getNum_rows).sum();
         fileMetaData.setNum_rows(totalRows);
@@ -273,9 +271,27 @@ public class ParquetWriter
         for (ColumnMetaData column : columns) {
             ColumnMetaData columnMetaData = new ColumnMetaData(column.type, column.encodings, column.path_in_schema, column.codec, column.num_values, column.total_uncompressed_size, column.total_compressed_size, currentOffset);
             columnMetaData.setStatistics(column.getStatistics());
+            columnMetaData.setEncoding_stats(column.getEncoding_stats());
             builder.add(columnMetaData);
             currentOffset += column.getTotal_compressed_size();
         }
         return builder.build();
+    }
+
+    @VisibleForTesting
+    static String formatCreatedBy(String trinoVersion)
+    {
+        // Add "(build n/a)" suffix to satisfy Parquet's VersionParser expectations
+        return "Trino version " + trinoVersion + " (build n/a)";
+    }
+
+    private void initColumnWriters()
+    {
+        ParquetProperties parquetProperties = ParquetProperties.builder()
+                .withWriterVersion(PARQUET_1_0)
+                .withPageSize(writerOption.getMaxPageSize())
+                .build();
+
+        this.columnWriters = ParquetWriters.getColumnWriters(messageType, primitiveTypes, parquetProperties, compressionCodecName);
     }
 }

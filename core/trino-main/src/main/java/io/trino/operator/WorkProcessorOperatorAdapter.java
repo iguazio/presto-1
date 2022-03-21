@@ -145,8 +145,7 @@ public class WorkProcessorOperatorAdapter
         this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
         MemoryTrackingContext memoryTrackingContext = new MemoryTrackingContext(
                 operatorContext.aggregateUserMemoryContext(),
-                operatorContext.aggregateRevocableMemoryContext(),
-                operatorContext.aggregateSystemMemoryContext());
+                operatorContext.aggregateRevocableMemoryContext());
         memoryTrackingContext.initializeLocalMemoryContexts(workProcessorOperatorFactory.getOperatorType());
         this.workProcessorOperator = requireNonNull(workProcessorOperatorFactory, "workProcessorOperatorFactory is null")
                 .createAdapterOperator(new ProcessorContext(operatorContext.getSession(), memoryTrackingContext, operatorContext));
@@ -186,13 +185,16 @@ public class WorkProcessorOperatorAdapter
     public Page getOutput()
     {
         if (!pages.process()) {
+            updateOperatorMetrics();
             return null;
         }
 
         if (pages.isFinished()) {
+            updateOperatorMetrics();
             return null;
         }
 
+        updateOperatorMetrics();
         return pages.getResult();
     }
 
@@ -213,5 +215,10 @@ public class WorkProcessorOperatorAdapter
             throws Exception
     {
         workProcessorOperator.close();
+    }
+
+    private void updateOperatorMetrics()
+    {
+        operatorContext.setLatestMetrics(workProcessorOperator.getMetrics());
     }
 }

@@ -37,7 +37,7 @@ public class TestAtopConnectorConfig
         assertRecordedDefaults(recordDefaults(AtopConnectorConfig.class)
                 .setExecutablePath("atop")
                 .setConcurrentReadersPerNode(1)
-                .setSecurity(AtopSecurity.NONE)
+                .setSecurity(AtopSecurity.ALLOW_ALL)
                 .setReadTimeout(new Duration(5, MINUTES))
                 .setMaxHistoryDays(30)
                 .setTimeZone(TimeZone.getDefault().getID()));
@@ -56,7 +56,7 @@ public class TestAtopConnectorConfig
                 .put("atop.security", "file")
                 .put("atop.max-history-days", "10")
                 .put("atop.time-zone", "PST")
-                .build();
+                .buildOrThrow();
 
         AtopConnectorConfig expected = new AtopConnectorConfig()
                 .setExecutablePath(atopExecutable.toString())

@@ -22,15 +22,16 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import io.trino.metadata.InsertTableHandle;
-import io.trino.metadata.NewTableLayout;
 import io.trino.metadata.OutputTableHandle;
-import io.trino.metadata.QualifiedObjectName;
+import io.trino.metadata.TableExecuteHandle;
 import io.trino.metadata.TableHandle;
+import io.trino.metadata.TableLayout;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.sql.planner.PartitioningScheme;
 import io.trino.sql.planner.Symbol;
+import io.trino.sql.tree.Table;
 
 import javax.annotation.concurrent.Immutable;
 
@@ -199,7 +200,9 @@ public class TableWriterNode
             @JsonSubTypes.Type(value = InsertTarget.class, name = "InsertTarget"),
             @JsonSubTypes.Type(value = DeleteTarget.class, name = "DeleteTarget"),
             @JsonSubTypes.Type(value = UpdateTarget.class, name = "UpdateTarget"),
-            @JsonSubTypes.Type(value = RefreshMaterializedViewTarget.class, name = "RefreshMaterializedViewTarget")})
+            @JsonSubTypes.Type(value = RefreshMaterializedViewTarget.class, name = "RefreshMaterializedViewTarget"),
+            @JsonSubTypes.Type(value = TableExecuteTarget.class, name = "TableExecuteTarget"),
+    })
     @SuppressWarnings({"EmptyClass", "ClassMayBeInterface"})
     public abstract static class WriterTarget
     {
@@ -213,9 +216,9 @@ public class TableWriterNode
     {
         private final String catalog;
         private final ConnectorTableMetadata tableMetadata;
-        private final Optional<NewTableLayout> layout;
+        private final Optional<TableLayout> layout;
 
-        public CreateReference(String catalog, ConnectorTableMetadata tableMetadata, Optional<NewTableLayout> layout)
+        public CreateReference(String catalog, ConnectorTableMetadata tableMetadata, Optional<TableLayout> layout)
         {
             this.catalog = requireNonNull(catalog, "catalog is null");
             this.tableMetadata = requireNonNull(tableMetadata, "tableMetadata is null");
@@ -232,7 +235,7 @@ public class TableWriterNode
             return tableMetadata;
         }
 
-        public Optional<NewTableLayout> getLayout()
+        public Optional<TableLayout> getLayout()
         {
             return layout;
         }
@@ -345,20 +348,20 @@ public class TableWriterNode
     public static class RefreshMaterializedViewReference
             extends WriterTarget
     {
-        private final QualifiedObjectName materializedViewName;
+        private final Table table;
         private final TableHandle storageTableHandle;
         private final List<TableHandle> sourceTableHandles;
 
-        public RefreshMaterializedViewReference(QualifiedObjectName materializedViewName, TableHandle storageTableHandle, List<TableHandle> sourceTableHandles)
+        public RefreshMaterializedViewReference(Table table, TableHandle storageTableHandle, List<TableHandle> sourceTableHandles)
         {
-            this.materializedViewName = requireNonNull(materializedViewName, "materializedViewName is null");
+            this.table = requireNonNull(table, "table is null");
             this.storageTableHandle = requireNonNull(storageTableHandle, "storageTableHandle is null");
             this.sourceTableHandles = ImmutableList.copyOf(sourceTableHandles);
         }
 
-        public QualifiedObjectName getMaterializedViewName()
+        public Table getTable()
         {
-            return materializedViewName;
+            return table;
         }
 
         public TableHandle getStorageTableHandle()
@@ -374,7 +377,7 @@ public class TableWriterNode
         @Override
         public String toString()
         {
-            return materializedViewName.toString();
+            return table.toString();
         }
     }
 
@@ -526,6 +529,54 @@ public class TableWriterNode
         public String toString()
         {
             return handle.map(Object::toString).orElse("[]");
+        }
+    }
+
+    public static class TableExecuteTarget
+            extends WriterTarget
+    {
+        private final TableExecuteHandle executeHandle;
+        private final Optional<TableHandle> sourceHandle;
+        private final SchemaTableName schemaTableName;
+
+        @JsonCreator
+        public TableExecuteTarget(
+                @JsonProperty("executeHandle") TableExecuteHandle executeHandle,
+                @JsonProperty("sourceHandle") Optional<TableHandle> sourceHandle,
+                @JsonProperty("schemaTableName") SchemaTableName schemaTableName)
+        {
+            this.executeHandle = requireNonNull(executeHandle, "handle is null");
+            this.sourceHandle = requireNonNull(sourceHandle, "sourceHandle is null");
+            this.schemaTableName = requireNonNull(schemaTableName, "schemaTableName is null");
+        }
+
+        @JsonProperty
+        public TableExecuteHandle getExecuteHandle()
+        {
+            return executeHandle;
+        }
+
+        @JsonProperty
+        public Optional<TableHandle> getSourceHandle()
+        {
+            return sourceHandle;
+        }
+
+        public TableHandle getMandatorySourceHandle()
+        {
+            return sourceHandle.orElseThrow();
+        }
+
+        @JsonProperty
+        public SchemaTableName getSchemaTableName()
+        {
+            return schemaTableName;
+        }
+
+        @Override
+        public String toString()
+        {
+            return executeHandle.toString();
         }
     }
 }

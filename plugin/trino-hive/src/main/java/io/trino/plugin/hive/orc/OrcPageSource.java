@@ -14,7 +14,9 @@
 package io.trino.plugin.hive.orc;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.io.Closer;
 import io.trino.memory.context.AggregatedMemoryContext;
+import io.trino.memory.context.LocalMemoryContext;
 import io.trino.orc.OrcCorruptionException;
 import io.trino.orc.OrcDataSource;
 import io.trino.orc.OrcDataSourceId;
@@ -44,6 +46,7 @@ import java.util.OptionalLong;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.trino.plugin.base.util.Closables.closeAllSuppress;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_BAD_DATA;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_CURSOR_ERROR;
 import static io.trino.plugin.hive.HiveUpdatablePageSource.BUCKET_CHANNEL;
@@ -69,12 +72,17 @@ public class OrcPageSource
 
     private boolean closed;
 
-    private final AggregatedMemoryContext systemMemoryContext;
+    private final AggregatedMemoryContext memoryContext;
+    private final LocalMemoryContext localMemoryContext;
 
     private final FileFormatDataSourceStats stats;
 
     // Row ID relative to all the original files of the same bucket ID before this file in lexicographic order
-    private Optional<Long> originalFileRowId = Optional.empty();
+    private final Optional<Long> originalFileRowId;
+
+    private long completedPositions;
+
+    private Optional<Page> outstandingPage = Optional.empty();
 
     public OrcPageSource(
             OrcRecordReader recordReader,
@@ -82,7 +90,7 @@ public class OrcPageSource
             OrcDataSource orcDataSource,
             Optional<OrcDeletedRows> deletedRows,
             Optional<Long> originalFileRowId,
-            AggregatedMemoryContext systemMemoryContext,
+            AggregatedMemoryContext memoryContext,
             FileFormatDataSourceStats stats)
     {
         this.recordReader = requireNonNull(recordReader, "recordReader is null");
@@ -90,7 +98,8 @@ public class OrcPageSource
         this.orcDataSource = requireNonNull(orcDataSource, "orcDataSource is null");
         this.deletedRows = requireNonNull(deletedRows, "deletedRows is null");
         this.stats = requireNonNull(stats, "stats is null");
-        this.systemMemoryContext = requireNonNull(systemMemoryContext, "systemMemoryContext is null");
+        this.memoryContext = requireNonNull(memoryContext, "memoryContext is null");
+        this.localMemoryContext = memoryContext.newLocalMemoryContext(OrcPageSource.class.getSimpleName());
         this.originalFileRowId = requireNonNull(originalFileRowId, "originalFileRowId is null");
     }
 
@@ -98,6 +107,12 @@ public class OrcPageSource
     public long getCompletedBytes()
     {
         return orcDataSource.getReadBytes();
+    }
+
+    @Override
+    public OptionalLong getCompletedPositions()
+    {
+        return OptionalLong.of(completedPositions);
     }
 
     @Override
@@ -122,10 +137,21 @@ public class OrcPageSource
     {
         Page page;
         try {
-            page = recordReader.nextPage();
+            if (outstandingPage.isPresent()) {
+                page = outstandingPage.get();
+                outstandingPage = Optional.empty();
+                // Mark no bytes consumed by outstandingPage.
+                // We can reset it again below if deletedRows loading yields again.
+                // In such case the brief period when it is set to 0 will not be observed externally as
+                // page source memory usage is only read by engine after call to getNextPage completes.
+                localMemoryContext.setBytes(0);
+            }
+            else {
+                page = recordReader.nextPage();
+            }
         }
         catch (IOException | RuntimeException e) {
-            closeWithSuppression(e);
+            closeAllSuppress(e, this);
             throw handleException(orcDataSource.getId(), e);
         }
 
@@ -134,15 +160,31 @@ public class OrcPageSource
             return null;
         }
 
+        completedPositions += page.getPositionCount();
+
         OptionalLong startRowId = originalFileRowId.isPresent() ?
                 OptionalLong.of(originalFileRowId.get() + recordReader.getFilePosition()) : OptionalLong.empty();
+
+        if (deletedRows.isPresent()) {
+            boolean deletedRowsYielded = !deletedRows.get().loadOrYield();
+            if (deletedRowsYielded) {
+                outstandingPage = Optional.of(page);
+                localMemoryContext.setBytes(page.getRetainedSizeInBytes());
+                return null; // return control to engine so it can update memory usage for query
+            }
+        }
 
         MaskDeletedRowsFunction maskDeletedRowsFunction = deletedRows
                 .map(deletedRows -> deletedRows.getMaskDeletedRowsFunction(page, startRowId))
                 .orElseGet(() -> MaskDeletedRowsFunction.noMaskForPage(page));
+        return getColumnAdaptationsPage(page, maskDeletedRowsFunction, recordReader.getFilePosition());
+    }
+
+    private Page getColumnAdaptationsPage(Page page, MaskDeletedRowsFunction maskDeletedRowsFunction, long filePosition)
+    {
         Block[] blocks = new Block[columnAdaptations.size()];
         for (int i = 0; i < columnAdaptations.size(); i++) {
-            blocks[i] = columnAdaptations.get(i).block(page, maskDeletedRowsFunction, recordReader.getFilePosition());
+            blocks[i] = columnAdaptations.get(i).block(page, maskDeletedRowsFunction, filePosition);
         }
         return new Page(maskDeletedRowsFunction.getPositionCount(), blocks);
     }
@@ -167,9 +209,21 @@ public class OrcPageSource
         }
         closed = true;
 
-        try {
+        Closer closer = Closer.create();
+
+        closer.register(() -> {
             stats.addMaxCombinedBytesPerRow(recordReader.getMaxCombinedBytesPerRow());
             recordReader.close();
+        });
+
+        closer.register(() -> {
+            if (deletedRows.isPresent()) {
+                deletedRows.get().close();
+            }
+        });
+
+        try {
+            closer.close();
         }
         catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -186,23 +240,9 @@ public class OrcPageSource
     }
 
     @Override
-    public long getSystemMemoryUsage()
+    public long getMemoryUsage()
     {
-        return systemMemoryContext.getBytes();
-    }
-
-    private void closeWithSuppression(Throwable throwable)
-    {
-        requireNonNull(throwable, "throwable is null");
-        try {
-            close();
-        }
-        catch (RuntimeException e) {
-            // Self-suppression not permitted
-            if (throwable != e) {
-                throwable.addSuppressed(e);
-            }
-        }
+        return memoryContext.getBytes();
     }
 
     public interface ColumnAdaptation

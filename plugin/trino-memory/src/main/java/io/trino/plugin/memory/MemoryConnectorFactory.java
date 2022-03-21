@@ -19,7 +19,6 @@ import io.airlift.json.JsonModule;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 
 import java.util.Map;
 
@@ -35,12 +34,6 @@ public class MemoryConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new MemoryHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> requiredConfig, ConnectorContext context)
     {
         requireNonNull(requiredConfig, "requiredConfig is null");
@@ -51,7 +44,6 @@ public class MemoryConnectorFactory
                 new MemoryModule(context.getTypeManager(), context.getNodeManager()));
 
         Injector injector = app
-                .strictConfig()
                 .doNotInitializeLogging()
                 .setRequiredConfigurationProperties(requiredConfig)
                 .initialize();

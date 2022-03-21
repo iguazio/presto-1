@@ -16,8 +16,6 @@ package io.trino.plugin.phoenix;
 import io.airlift.slice.Slice;
 import io.trino.plugin.jdbc.DefaultJdbcMetadata;
 import io.trino.plugin.jdbc.JdbcColumnHandle;
-import io.trino.plugin.jdbc.JdbcIdentity;
-import io.trino.plugin.jdbc.JdbcMetadataConfig;
 import io.trino.plugin.jdbc.JdbcTableHandle;
 import io.trino.plugin.jdbc.mapping.IdentifierMapping;
 import io.trino.spi.TrinoException;
@@ -26,11 +24,11 @@ import io.trino.spi.connector.AggregationApplicationResult;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.ConnectorInsertTableHandle;
-import io.trino.spi.connector.ConnectorNewTableLayout;
 import io.trino.spi.connector.ConnectorOutputMetadata;
 import io.trino.spi.connector.ConnectorOutputTableHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableHandle;
+import io.trino.spi.connector.ConnectorTableLayout;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.ConnectorTableSchema;
 import io.trino.spi.connector.SchemaTableName;
@@ -67,9 +65,9 @@ public class PhoenixMetadata
     private final IdentifierMapping identifierMapping;
 
     @Inject
-    public PhoenixMetadata(PhoenixClient phoenixClient, JdbcMetadataConfig metadataConfig, IdentifierMapping identifierMapping)
+    public PhoenixMetadata(PhoenixClient phoenixClient, IdentifierMapping identifierMapping)
     {
-        super(phoenixClient, metadataConfig.isAllowDropTable());
+        super(phoenixClient);
         this.phoenixClient = requireNonNull(phoenixClient, "phoenixClient is null");
         this.identifierMapping = requireNonNull(identifierMapping, "identifierMapping is null");
     }
@@ -137,7 +135,7 @@ public class PhoenixMetadata
     private String toRemoteSchemaName(ConnectorSession session, String schemaName)
     {
         try (Connection connection = phoenixClient.getConnection(session)) {
-            return identifierMapping.toRemoteSchemaName(JdbcIdentity.from(session), connection, schemaName);
+            return identifierMapping.toRemoteSchemaName(session.getIdentity(), connection, schemaName);
         }
         catch (SQLException e) {
             throw new TrinoException(PHOENIX_METADATA_ERROR, "Couldn't get casing for the schema name", e);
@@ -151,7 +149,7 @@ public class PhoenixMetadata
     }
 
     @Override
-    public ConnectorOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorNewTableLayout> layout)
+    public ConnectorOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorTableLayout> layout)
     {
         return phoenixClient.beginCreateTable(session, tableMetadata);
     }
@@ -231,6 +229,12 @@ public class PhoenixMetadata
             phoenixClient.execute(session, format("DROP SEQUENCE %s", getEscapedTableName(jdbcHandle.getSchemaName(), jdbcHandle.getTableName() + "_sequence")));
         }
         phoenixClient.dropTable(session, (JdbcTableHandle) tableHandle);
+    }
+
+    @Override
+    public void truncateTable(ConnectorSession session, ConnectorTableHandle tableHandle)
+    {
+        throw new TrinoException(NOT_SUPPORTED, "This connector does not support truncating tables");
     }
 
     @Override

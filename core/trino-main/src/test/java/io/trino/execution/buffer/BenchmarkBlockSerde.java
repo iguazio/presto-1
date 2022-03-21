@@ -19,12 +19,14 @@ import io.airlift.slice.DynamicSliceOutput;
 import io.airlift.slice.OutputStreamSliceOutput;
 import io.airlift.slice.Slice;
 import io.trino.execution.buffer.PagesSerde.PagesSerdeContext;
+import io.trino.plugin.tpch.DecimalTypeMapping;
 import io.trino.spi.Page;
 import io.trino.spi.PageBuilder;
 import io.trino.spi.block.BlockBuilder;
 import io.trino.spi.block.TestingBlockEncodingSerde;
 import io.trino.spi.type.DecimalType;
 import io.trino.spi.type.Decimals;
+import io.trino.spi.type.Int128;
 import io.trino.spi.type.SqlDecimal;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.VarcharType;
@@ -174,7 +176,7 @@ public class BenchmarkBlockSerde
         return ImmutableList.copyOf(readPages(data.getPagesSerde(), new BasicSliceInput(data.getDataSource())));
     }
 
-    private static List<SerializedPage> serializePages(BenchmarkData data)
+    private static List<Slice> serializePages(BenchmarkData data)
     {
         PagesSerdeContext context = new PagesSerdeContext();
         return data.getPages().stream()
@@ -205,7 +207,7 @@ public class BenchmarkBlockSerde
                     BIGINT.writeLong(blockBuilder, ((Number) value).longValue());
                 }
                 else if (Decimals.isLongDecimal(type)) {
-                    type.writeSlice(blockBuilder, Decimals.encodeUnscaledValue(((SqlDecimal) value).toBigDecimal().unscaledValue()));
+                    type.writeObject(blockBuilder, Int128.valueOf(((SqlDecimal) value).toBigDecimal().unscaledValue()));
                 }
                 else if (type instanceof VarcharType) {
                     Slice slice = truncateToLength(utf8Slice((String) value), type);
@@ -360,7 +362,7 @@ public class BenchmarkBlockSerde
         {
             PagesSerde pagesSerde = new PagesSerdeFactory(new TestingBlockEncodingSerde(), false).createPagesSerde();
 
-            List<Page> pages = ImmutableList.copyOf(getTablePages("lineitem", 0.1));
+            List<Page> pages = ImmutableList.copyOf(getTablePages("lineitem", 0.1, DecimalTypeMapping.DOUBLE));
             DynamicSliceOutput sliceOutput = new DynamicSliceOutput(0);
             writePages(pagesSerde, new OutputStreamSliceOutput(sliceOutput), pages.listIterator());
             setup(sliceOutput.slice(), pagesSerde, pages);

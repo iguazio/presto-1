@@ -12,7 +12,7 @@ Requirements
 
 To connect to a ClickHouse server, you need:
 
-* ClickHouse version 20.8 or higher.
+* ClickHouse (version 21.3 or higher) or Altinity (version 20.3 or higher).
 * Network access from the Trino coordinator and workers to the ClickHouse
   server. Port 8123 is the default port.
 
@@ -23,8 +23,8 @@ The connector can query a ClickHouse server. Create a catalog properties file
 that specifies the ClickHouse connector by setting the ``connector.name`` to
 ``clickhouse``.
 
-For example, to access a server as ``myclickhouse``, create the file
-``etc/catalog/myclickhouse.properties``. Replace the connection properties as
+For example, to access a server as ``clickhouse``, create the file
+``etc/catalog/clickhouse.properties``. Replace the connection properties as
 appropriate for your setup:
 
 .. code-block:: none
@@ -33,6 +33,36 @@ appropriate for your setup:
     connection-url=jdbc:clickhouse://host1:8123/
     connection-user=exampleuser
     connection-password=examplepassword
+
+.. note::
+
+    Trino uses the new ClickHouse driver(``com.clickhouse.jdbc.ClickHouseDriver``)
+    by default, but the new driver only supports ClickHouse server with version >= 20.7.
+
+    For compatibility with ClickHouse server versions < 20.7,
+    you can temporarily continue to use the old ClickHouse driver(``ru.yandex.clickhouse.ClickHouseDriver``)
+    by adding the following catalog property: ``clickhouse.legacy-driver=true``.
+
+.. _clickhouse-tls:
+
+Connection security
+^^^^^^^^^^^^^^^^^^^
+
+If you have TLS configured with a globally-trusted certificate installed on your
+data source, you can enable TLS between your cluster and the data
+source by appending a parameter to the JDBC connection string set in the
+``connection-url`` catalog configuration property.
+
+For example, with version 2.6.4 of the ClickHouse JDBC driver, enable TLS by
+appending the ``ssl=true`` parameter to the ``connection-url`` configuration
+property:
+
+.. code-block:: properties
+
+  connection-url=jdbc:clickhouse://host1:8123/?ssl=true
+
+For more information on TLS configuration options, see the `Clickhouse JDBC
+driver documentation <https://clickhouse.com/docs/en/interfaces/jdbc/>`_
 
 Multiple ClickHouse servers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -45,6 +75,14 @@ catalog for each server. To add another catalog:
 
 For example, if you name the property file ``sales.properties``, Trino uses the
 configured connector to create a catalog named ``sales``.
+
+.. include:: jdbc-common-configurations.fragment
+
+.. include:: jdbc-procedures.fragment
+
+.. include:: jdbc-case-insensitive-matching.fragment
+
+.. include:: non-transactional-insert.fragment
 
 Querying ClickHouse
 -------------------
@@ -115,6 +153,38 @@ Property Name               Default Value    Description
 Currently the connector only supports ``Log`` and ``MergeTree`` table engines
 in create table statement. ``ReplicatedMergeTree`` engine is not yet supported.
 
+.. _clickhouse-type-mapping:
+
+Type mapping
+------------
+
+The data type mappings are as follows:
+
+================= =============== ===================================================================================================
+ClickHouse        Trino           Notes
+================= =============== ===================================================================================================
+``Int8``          ``TINYINT``     ``TINYINT``, ``BOOL``, ``BOOLEAN`` and ``INT1`` are aliases of ``Int8``
+``Int16``         ``SMALLINT``    ``SMALLINT`` and ``INT2`` are aliases of ``Int16``
+``Int32``         ``INTEGER``     ``INT``, ``INT4`` and ``INTEGER`` are aliases of ``Int32``
+``Int64``         ``BIGINT``      ``BIGINT`` is an alias of ``Int64``
+``Float32``       ``REAL``        ``FLOAT`` is an alias of ``Float32``
+``Float64``       ``DOUBLE``      ``DOUBLE`` is an alias of ``Float64``
+``Decimal``       ``DECIMAL``
+``FixedString``   ``VARBINARY``   Enabling ``clickhouse.map-string-as-varchar`` config property changes the mapping to ``VARCHAR``
+``String``        ``VARBINARY``   Enabling ``clickhouse.map-string-as-varchar`` config property changes the mapping to ``VARCHAR``
+``Date``          ``DATE``
+``DateTime``      ``TIMESTAMP``
+``IPv4``          ``IPADDRESS``
+``IPv6``          ``IPADDRESS``
+``Enum8``         ``VARCHAR``
+``Enum16``        ``VARCHAR``
+``UUID``           ``UUID``
+================= =============== ===================================================================================================
+
+.. include:: jdbc-type-mapping.fragment
+
+.. _clickhouse-pushdown:
+
 Pushdown
 --------
 
@@ -130,13 +200,20 @@ The connector supports pushdown for a number of operations:
 * :func:`min`
 * :func:`sum`
 
-Limitations
+.. include:: no-pushdown-text-type.fragment
+
+.. _clickhouse-sql-support:
+
+SQL support
 -----------
 
-The following SQL statements aren't  supported:
+The connector provides read and write access to data and metadata in
+a ClickHouse catalog. In addition to the :ref:`globally available
+<sql-globally-available>` and :ref:`read operation <sql-read-operations>`
+statements, the connector supports the following features:
 
-* :doc:`/sql/grant`
-* :doc:`/sql/revoke`
-* :doc:`/sql/show-grants`
-* :doc:`/sql/show-roles`
-* :doc:`/sql/show-role-grants`
+* :doc:`/sql/insert`
+* :doc:`/sql/truncate`
+* :ref:`sql-schema-table-management`
+
+.. include:: alter-schema-limitation.fragment

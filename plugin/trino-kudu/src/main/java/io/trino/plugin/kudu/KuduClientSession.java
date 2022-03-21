@@ -231,7 +231,7 @@ public class KuduClientSession
             return client.openTable(rawName);
         }
         catch (KuduException e) {
-            log.debug("Error on doOpenTable: " + e, e);
+            log.debug(e, "Error on doOpenTable");
             if (!listSchemaNames().contains(schemaTableName.getSchemaName())) {
                 throw new SchemaNotFoundException(schemaTableName.getSchemaName());
             }
@@ -603,7 +603,7 @@ public class KuduClientSession
     {
         try {
             byte[] serializedScanToken = token.serialize();
-            return new KuduSplit(tableHandle, primaryKeyColumnCount, serializedScanToken, bucketNumber);
+            return new KuduSplit(tableHandle.getSchemaTableName(), primaryKeyColumnCount, serializedScanToken, bucketNumber);
         }
         catch (IOException e) {
             throw new TrinoException(GENERIC_INTERNAL_ERROR, e);

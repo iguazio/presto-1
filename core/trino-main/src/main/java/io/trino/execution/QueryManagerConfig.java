@@ -20,6 +20,7 @@ import io.airlift.configuration.LegacyConfig;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import io.airlift.units.MinDuration;
+import io.trino.operator.RetryPolicy;
 
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
@@ -27,6 +28,10 @@ import javax.validation.constraints.NotNull;
 
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+
+import static io.airlift.units.DataSize.Unit.GIGABYTE;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 @DefunctConfig({
         "query.max-pending-splits-per-node",
@@ -58,7 +63,7 @@ public class QueryManagerConfig
     private Duration remoteTaskMaxErrorDuration = new Duration(5, TimeUnit.MINUTES);
     private int remoteTaskMaxCallbackThreads = 1000;
 
-    private String queryExecutionPolicy = "all-at-once";
+    private String queryExecutionPolicy = "phased";
     private Duration queryMaxRunTime = new Duration(100, TimeUnit.DAYS);
     private Duration queryMaxExecutionTime = new Duration(100, TimeUnit.DAYS);
     private Duration queryMaxPlanningTime = new Duration(10, TimeUnit.MINUTES);
@@ -67,6 +72,14 @@ public class QueryManagerConfig
 
     private int requiredWorkers = 1;
     private Duration requiredWorkersMaxWait = new Duration(5, TimeUnit.MINUTES);
+
+    private RetryPolicy retryPolicy = RetryPolicy.NONE;
+    private int retryAttempts = 4;
+    private Duration retryInitialDelay = new Duration(10, SECONDS);
+    private Duration retryMaxDelay = new Duration(1, MINUTES);
+
+    private DataSize faultTolerantExecutionTargetTaskInputSize = DataSize.of(1, GIGABYTE);
+    private int faultTolerantExecutionTargetTaskSplitCount = 16;
 
     @Min(1)
     public int getScheduleSplitBatchSize()
@@ -376,6 +389,86 @@ public class QueryManagerConfig
     public QueryManagerConfig setRequiredWorkersMaxWait(Duration requiredWorkersMaxWait)
     {
         this.requiredWorkersMaxWait = requiredWorkersMaxWait;
+        return this;
+    }
+
+    @NotNull
+    public RetryPolicy getRetryPolicy()
+    {
+        return retryPolicy;
+    }
+
+    @Config("retry-policy")
+    public QueryManagerConfig setRetryPolicy(RetryPolicy retryPolicy)
+    {
+        this.retryPolicy = retryPolicy;
+        return this;
+    }
+
+    @Min(0)
+    public int getRetryAttempts()
+    {
+        return retryAttempts;
+    }
+
+    @Config("retry-attempts")
+    public QueryManagerConfig setRetryAttempts(int retryAttempts)
+    {
+        this.retryAttempts = retryAttempts;
+        return this;
+    }
+
+    @NotNull
+    public Duration getRetryInitialDelay()
+    {
+        return retryInitialDelay;
+    }
+
+    @Config("retry-initial-delay")
+    @ConfigDescription("Initial delay before initiating a retry attempt. Delay increases exponentially for each subsequent attempt up to 'retry_max_delay'")
+    public QueryManagerConfig setRetryInitialDelay(Duration retryInitialDelay)
+    {
+        this.retryInitialDelay = retryInitialDelay;
+        return this;
+    }
+
+    @NotNull
+    public Duration getRetryMaxDelay()
+    {
+        return retryMaxDelay;
+    }
+
+    @Config("retry-max-delay")
+    @ConfigDescription("Maximum delay before initiating a retry attempt. Delay increases exponentially for each subsequent attempt starting from 'retry_initial_delay'")
+    public QueryManagerConfig setRetryMaxDelay(Duration retryMaxDelay)
+    {
+        this.retryMaxDelay = retryMaxDelay;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getFaultTolerantExecutionTargetTaskInputSize()
+    {
+        return faultTolerantExecutionTargetTaskInputSize;
+    }
+
+    @Config("fault-tolerant-execution-target-task-input-size")
+    public QueryManagerConfig setFaultTolerantExecutionTargetTaskInputSize(DataSize faultTolerantExecutionTargetTaskInputSize)
+    {
+        this.faultTolerantExecutionTargetTaskInputSize = faultTolerantExecutionTargetTaskInputSize;
+        return this;
+    }
+
+    @Min(1)
+    public int getFaultTolerantExecutionTargetTaskSplitCount()
+    {
+        return faultTolerantExecutionTargetTaskSplitCount;
+    }
+
+    @Config("fault-tolerant-execution-target-task-split-count")
+    public QueryManagerConfig setFaultTolerantExecutionTargetTaskSplitCount(int faultTolerantExecutionTargetTaskSplitCount)
+    {
+        this.faultTolerantExecutionTargetTaskSplitCount = faultTolerantExecutionTargetTaskSplitCount;
         return this;
     }
 }

@@ -64,7 +64,7 @@ public final class AccumuloQueryRunner
                         .put(AccumuloConfig.USERNAME, server.getUser())
                         .put(AccumuloConfig.PASSWORD, server.getPassword())
                         .put(AccumuloConfig.ZOOKEEPER_METADATA_ROOT, "/presto-accumulo-test")
-                        .build();
+                        .buildOrThrow();
 
         queryRunner.createCatalog("accumulo", "accumulo", accumuloProperties);
 
@@ -128,8 +128,7 @@ public final class AccumuloQueryRunner
                 break;
         }
 
-        LOG.info("Running import for %s", target, sql);
-        LOG.info("%s", sql);
+        LOG.info("Running import for %s%n%s", target, sql);
         long start = System.nanoTime();
         long rows = queryRunner.execute(session, sql).getUpdateCount().getAsLong();
         LOG.info("Imported %s rows for %s in %s", rows, target, nanosSince(start));

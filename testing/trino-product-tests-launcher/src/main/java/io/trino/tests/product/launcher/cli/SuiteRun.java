@@ -241,7 +241,7 @@ public class SuiteRun
         private void printTestRunsSummary(List<TestRunResult> results)
         {
             ConsoleTable table = new ConsoleTable();
-            table.addHeader(HEADER);
+            table.addHeader(HEADER.toArray());
             results.forEach(result -> table.addRow(result.toRow()));
             table.addSeparator();
             log.info("Suite tests results:\n%s", table.render());
@@ -311,7 +311,7 @@ public class SuiteRun
             testRunOptions.testJar = suiteRunOptions.testJar;
             testRunOptions.cliJar = suiteRunOptions.cliJar;
             String suiteRunId = suiteRunId(runId, suiteName, suiteTestRun, environmentConfig);
-            testRunOptions.reportsDir = Paths.get("presto-product-tests/target/reports/" + suiteRunId);
+            testRunOptions.reportsDir = Paths.get("testing/trino-product-tests/target/reports/" + suiteRunId);
             testRunOptions.logsDirBase = logsDirBase.map(dir -> dir.resolve(suiteRunId));
             // Calculate remaining time
             testRunOptions.timeout = remainingTimeout();
@@ -350,9 +350,7 @@ public class SuiteRun
 
     static class TestRunResult
     {
-        public static final Object[] HEADER = {
-                "id", "suite", "environment", "config", "options", "status", "elapsed", "error"
-        };
+        public static final List<String> HEADER = List.of("id", "suite", "environment", "config", "options", "status", "elapsed", "error");
 
         private final String runId;
         private final SuiteTestRun suiteRun;

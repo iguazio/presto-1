@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import io.trino.Session;
 import io.trino.metadata.Metadata;
 import io.trino.metadata.ResolvedFunction;
 import io.trino.spi.type.Type;
@@ -63,13 +64,13 @@ public class SetOperationNodeTranslator
     private final ResolvedFunction countFunction;
     private final ResolvedFunction rowNumberFunction;
 
-    public SetOperationNodeTranslator(Metadata metadata, SymbolAllocator symbolAllocator, PlanNodeIdAllocator idAllocator)
+    public SetOperationNodeTranslator(Session session, Metadata metadata, SymbolAllocator symbolAllocator, PlanNodeIdAllocator idAllocator)
     {
         this.symbolAllocator = requireNonNull(symbolAllocator, "SymbolAllocator is null");
         this.idAllocator = requireNonNull(idAllocator, "idAllocator is null");
         requireNonNull(metadata, "metadata is null");
-        this.countFunction = metadata.resolveFunction(QualifiedName.of("count"), fromTypes(BOOLEAN));
-        this.rowNumberFunction = metadata.resolveFunction(QualifiedName.of("row_number"), ImmutableList.of());
+        this.countFunction = metadata.resolveFunction(session, QualifiedName.of("count"), fromTypes(BOOLEAN));
+        this.rowNumberFunction = metadata.resolveFunction(session, QualifiedName.of("row_number"), ImmutableList.of());
     }
 
     public TranslationResult makeSetContainmentPlanForDistinct(SetOperationNode node)
@@ -181,7 +182,7 @@ public class SetOperationNodeTranslator
 
         return new AggregationNode(idAllocator.getNextId(),
                 sourceNode,
-                aggregations.build(),
+                aggregations.buildOrThrow(),
                 singleGroupingSet(originalColumns),
                 ImmutableList.of(),
                 AggregationNode.Step.SINGLE,
@@ -213,7 +214,7 @@ public class SetOperationNodeTranslator
                 idAllocator.getNextId(),
                 sourceNode,
                 new Specification(originalColumns, Optional.empty()),
-                functions.build(),
+                functions.buildOrThrow(),
                 Optional.empty(),
                 ImmutableSet.of(),
                 0);

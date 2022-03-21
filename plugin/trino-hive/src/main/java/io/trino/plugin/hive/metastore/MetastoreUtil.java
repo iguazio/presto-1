@@ -35,6 +35,7 @@ import io.trino.spi.type.DateType;
 import io.trino.spi.type.DecimalType;
 import io.trino.spi.type.Decimals;
 import io.trino.spi.type.DoubleType;
+import io.trino.spi.type.Int128;
 import io.trino.spi.type.IntegerType;
 import io.trino.spi.type.RealType;
 import io.trino.spi.type.SmallintType;
@@ -148,7 +149,7 @@ public final class MetastoreUtil
         for (Map.Entry<String, String> param : sd.getSerdeParameters().entrySet()) {
             schema.setProperty(param.getKey(), (param.getValue() != null) ? param.getValue() : "");
         }
-        schema.setProperty(SERIALIZATION_LIB, sd.getStorageFormat().getSerDe());
+        schema.setProperty(SERIALIZATION_LIB, sd.getStorageFormat().getSerde());
 
         StringBuilder columnNameBuilder = new StringBuilder();
         StringBuilder columnTypeBuilder = new StringBuilder();
@@ -216,7 +217,7 @@ public final class MetastoreUtil
 
     public static boolean isAvroTableWithSchemaSet(Table table)
     {
-        return AVRO.getSerDe().equals(table.getStorage().getStorageFormat().getSerDeNullable()) &&
+        return AVRO.getSerde().equals(table.getStorage().getStorageFormat().getSerDeNullable()) &&
                 (table.getParameters().get(AVRO_SCHEMA_URL_KEY) != null ||
                         (table.getStorage().getSerdeParameters().get(AVRO_SCHEMA_URL_KEY) != null));
     }
@@ -393,8 +394,7 @@ public final class MetastoreUtil
             return slice.toStringUtf8();
         }
         else if (type instanceof DecimalType && !((DecimalType) type).isShort()) {
-            Slice slice = (Slice) value;
-            return Decimals.toString(slice, ((DecimalType) type).getScale());
+            return Decimals.toString((Int128) value, ((DecimalType) type).getScale());
         }
         else if (type instanceof DecimalType && ((DecimalType) type).isShort()) {
             return Decimals.toString((long) value, ((DecimalType) type).getScale());

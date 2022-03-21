@@ -22,11 +22,13 @@ import io.trino.execution.buffer.BufferResult;
 import io.trino.execution.buffer.OutputBuffers;
 import io.trino.execution.buffer.OutputBuffers.OutputBufferId;
 import io.trino.memory.MemoryPoolAssignmentsRequest;
+import io.trino.spi.predicate.Domain;
 import io.trino.sql.planner.PlanFragment;
+import io.trino.sql.planner.plan.DynamicFilterId;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 
 public interface TaskManager
 {
@@ -83,10 +85,16 @@ public interface TaskManager
     void updateMemoryPoolAssignments(MemoryPoolAssignmentsRequest assignments);
 
     /**
-     * Updates the task plan, sources and output buffers.  If the task does not
+     * Updates the task plan, splitAssignments and output buffers.  If the task does not
      * already exist, it is created and then updated.
      */
-    TaskInfo updateTask(Session session, TaskId taskId, Optional<PlanFragment> fragment, List<TaskSource> sources, OutputBuffers outputBuffers, OptionalInt totalPartitions);
+    TaskInfo updateTask(
+            Session session,
+            TaskId taskId,
+            Optional<PlanFragment> fragment,
+            List<SplitAssignment> splitAssignments,
+            OutputBuffers outputBuffers,
+            Map<DynamicFilterId, Domain> dynamicFilterDomains);
 
     /**
      * Cancels a task.  If the task does not already exist, it is created and then
@@ -99,6 +107,12 @@ public interface TaskManager
      * aborted.
      */
     TaskInfo abortTask(TaskId taskId);
+
+    /**
+     * Fail a task.  If the task does not already exist, it is created and then
+     * failed.
+     */
+    TaskInfo failTask(TaskId taskId, Throwable failure);
 
     /**
      * Gets results from a task either immediately or in the future.  If the
@@ -123,7 +137,7 @@ public interface TaskManager
      * NOTE: this design assumes that only tasks and buffers that will
      * eventually exist are queried.
      */
-    TaskInfo abortTaskResults(TaskId taskId, OutputBufferId bufferId);
+    TaskInfo destroyTaskResults(TaskId taskId, OutputBufferId bufferId);
 
     /**
      * Adds a state change listener to the specified task.
@@ -132,4 +146,14 @@ public interface TaskManager
      * possible notifications are observed out of order due to the asynchronous execution.
      */
     void addStateChangeListener(TaskId taskId, StateChangeListener<TaskState> stateChangeListener);
+
+    /**
+     * Add a listener that notifies about failures of any source tasks for a given task
+     */
+    void addSourceTaskFailureListener(TaskId taskId, TaskFailureListener listener);
+
+    /**
+     * Return trace token for a given task (see Session#traceToken)
+     */
+    Optional<String> getTraceToken(TaskId taskId);
 }

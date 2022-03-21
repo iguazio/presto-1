@@ -28,6 +28,7 @@ import org.testng.annotations.Test;
 import static io.trino.SessionTestUtils.TEST_SESSION;
 import static io.trino.spi.StandardErrorCode.INVALID_CAST_ARGUMENT;
 import static io.trino.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
+import static io.trino.spi.StandardErrorCode.INVALID_LITERAL;
 import static io.trino.spi.StandardErrorCode.TYPE_MISMATCH;
 import static io.trino.spi.function.OperatorType.INDETERMINATE;
 import static io.trino.spi.type.BigintType.BIGINT;
@@ -180,6 +181,11 @@ public class TestJsonOperators
         assertFunction("JSON '[null]'", JSON, "[null]");
         assertFunction("JSON '[13,null,42]'", JSON, "[13,null,42]");
         assertFunction("JSON '{\"x\": null}'", JSON, "{\"x\":null}");
+        assertInvalidFunction("JSON '{}{'", INVALID_LITERAL);
+        assertInvalidFunction("JSON '{} \"a\"'", INVALID_LITERAL);
+        assertInvalidFunction("JSON '{}{abc'", INVALID_LITERAL);
+        assertInvalidFunction("JSON '{}abc'", INVALID_LITERAL);
+        assertInvalidFunction("JSON ''", INVALID_LITERAL);
     }
 
     @Test
@@ -328,8 +334,8 @@ public class TestJsonOperators
         assertFunction("cast(JSON 'null' as VARCHAR)", VARCHAR, null);
         assertFunction("cast(JSON '128' as VARCHAR)", VARCHAR, "128");
         assertFunction("cast(JSON '12345678901234567890' as VARCHAR)", VARCHAR, "12345678901234567890"); // overflow, no loss of precision
-        assertFunction("cast(JSON '128.9' as VARCHAR)", VARCHAR, "128.9");
-        assertFunction("cast(JSON '1e-324' as VARCHAR)", VARCHAR, "0.0"); // smaller than minimum subnormal positive
+        assertFunction("cast(JSON '128.9' as VARCHAR)", VARCHAR, "1.289E2");
+        assertFunction("cast(JSON '1e-324' as VARCHAR)", VARCHAR, "0E0"); // smaller than minimum subnormal positive
         assertFunction("cast(JSON '1e309' as VARCHAR)", VARCHAR, "Infinity"); // overflow
         assertFunction("cast(JSON '-1e309' as VARCHAR)", VARCHAR, "-Infinity"); // underflow
         assertFunction("cast(JSON 'true' as VARCHAR)", VARCHAR, "true");

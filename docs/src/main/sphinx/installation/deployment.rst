@@ -2,8 +2,12 @@
 Deploying Trino
 ================
 
+.. _requirements:
+
 Requirements
 ------------
+
+.. _requirements-linux:
 
 Linux operating system
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -22,6 +26,9 @@ Linux operating system
       trino soft nofile 131072
       trino hard nofile 131072
 
+..
+   These values are used in core/trino-server-rpm/src/main/resources/dist/etc/init.d/trino
+
 .. _requirements-java:
 
 Java runtime environment
@@ -29,12 +36,14 @@ Java runtime environment
 
 Trino requires a 64-bit version of Java 11, with a minimum required version of 11.0.11.
 Earlier patch versions such as 11.0.2 do not work, nor will earlier major versions such as Java 8.
-Newer major versions such as Java 12 or 13 are not supported -- they may work, but are not tested.
+Newer major versions such as Java 12 or 13, including Java 17, are not supported -- they may work, but are not tested.
 
 We recommend using `Azul Zulu <https://www.azul.com/downloads/zulu-community/>`_
 as the JDK for Trino, as Trino is tested against that distribution.
 Zulu is also the JDK used by the
 `Trino Docker image <https://hub.docker.com/r/trinodb/trino>`_.
+
+.. _requirements-python:
 
 Python
 ^^^^^^
@@ -100,7 +109,7 @@ The above properties are described below:
   The location (filesystem path) of the data directory. Trino stores
   logs and other data here.
 
-.. _trino_jvm_config:
+.. _jvm_config:
 
 JVM config
 ^^^^^^^^^^
@@ -161,7 +170,6 @@ The following is a minimal configuration for the coordinator:
     http-server.http.port=8080
     query.max-memory=50GB
     query.max-memory-per-node=1GB
-    query.max-total-memory-per-node=2GB
     discovery.uri=http://example.net:8080
 
 And this is a minimal configuration for the workers:
@@ -172,7 +180,6 @@ And this is a minimal configuration for the workers:
     http-server.http.port=8080
     query.max-memory=50GB
     query.max-memory-per-node=1GB
-    query.max-total-memory-per-node=2GB
     discovery.uri=http://example.net:8080
 
 Alternatively, if you are setting up a single machine for testing, that
@@ -185,7 +192,6 @@ functions as both a coordinator and worker, use this configuration:
     http-server.http.port=8080
     query.max-memory=5GB
     query.max-memory-per-node=1GB
-    query.max-total-memory-per-node=2GB
     discovery.uri=http://example.net:8080
 
 These properties require some explanation:
@@ -210,10 +216,6 @@ These properties require some explanation:
 
 * ``query.max-memory-per-node``:
   The maximum amount of user memory, that a query may use on any one machine.
-
-* ``query.max-total-memory-per-node``:
-  The maximum amount of user and system memory, that a query may use on any one machine,
-  where system memory is the memory used during execution by readers, writers, and network buffers, etc.
 
 * ``discovery.uri``:
   The Trino coordinator has a discovery service that is used by all the nodes
@@ -248,6 +250,8 @@ This would set the minimum level to ``INFO`` for both
 The default minimum level is ``INFO``,
 thus the above example does not actually change anything.
 There are four levels: ``DEBUG``, ``INFO``, ``WARN`` and ``ERROR``.
+
+.. _catalog_properties:
 
 Catalog properties
 ^^^^^^^^^^^^^^^^^^

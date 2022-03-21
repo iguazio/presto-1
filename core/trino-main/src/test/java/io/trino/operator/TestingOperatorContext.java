@@ -36,7 +36,7 @@ public final class TestingOperatorContext
                 scheduledExecutor,
                 TestingSession.testSessionBuilder().build());
 
-        MemoryTrackingContext pipelineMemoryContext = new MemoryTrackingContext(newSimpleAggregatedMemoryContext(), newSimpleAggregatedMemoryContext(), newSimpleAggregatedMemoryContext());
+        MemoryTrackingContext pipelineMemoryContext = new MemoryTrackingContext(newSimpleAggregatedMemoryContext(), newSimpleAggregatedMemoryContext());
 
         PipelineContext pipelineContext = new PipelineContext(
                 1,
@@ -53,7 +53,8 @@ public final class TestingOperatorContext
                 executor,
                 scheduledExecutor,
                 pipelineMemoryContext,
-                Lifespan.taskWide());
+                Lifespan.taskWide(),
+                0L);
 
         OperatorContext operatorContext = driverContext.addOperatorContext(
                 1,

@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.trino</groupId>
         <artifactId>trino-root</artifactId>
-        <version>359</version>
+        <version>370</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -23,7 +23,7 @@
                 <groupId>com.google.cloud</groupId>
                 <artifactId>libraries-bom</artifactId>
                 <type>pom</type>
-                <version>16.3.0</version>
+                <version>22.0.0</version>
                 <scope>import</scope>
             </dependency>
 
@@ -48,12 +48,17 @@
             <dependency>
                 <groupId>org.threeten</groupId>
                 <artifactId>threetenbp</artifactId>
-                <version>1.5.0</version>
+                <version>1.5.1</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
+        <dependency>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-plugin-toolkit</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.airlift</groupId>
             <artifactId>bootstrap</artifactId>
@@ -102,7 +107,7 @@
 
         <dependency>
             <groupId>com.google.api.grpc</groupId>
-            <artifactId>proto-google-cloud-bigquerystorage-v1beta1</artifactId>
+            <artifactId>proto-google-cloud-bigquerystorage-v1</artifactId>
             <exclusions>
                 <exclusion>
                     <groupId>com.google.guava</groupId>
@@ -226,6 +231,12 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.openjdk.jol</groupId>
+            <artifactId>jol-core</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- for testing -->
         <dependency>
             <groupId>io.trino</groupId>
@@ -248,6 +259,27 @@
 
         <dependency>
             <groupId>io.trino</groupId>
+            <artifactId>trino-main</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-codec</groupId>
+                    <artifactId>commons-codec</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-spi</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.trino</groupId>
             <artifactId>trino-testing</artifactId>
             <scope>test</scope>
 
@@ -262,6 +294,12 @@
         <dependency>
             <groupId>io.trino</groupId>
             <artifactId>trino-tpch</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.trino.tpch</groupId>
+            <artifactId>tpch</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -304,8 +342,11 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <excludes>
-                                <!-- If you are adding entry here also add an entry to cloud-tests profile below -->
+                                <!-- If you are adding entry here also add an entry to cloud-tests or cloud-tests-case-insensitive-mapping profile below -->
                                 <exclude>**/TestBigQueryIntegrationSmokeTest.java</exclude>
+                                <exclude>**/TestBigQueryTypeMapping.java</exclude>
+                                <exclude>**/TestBigQueryMetadata.java</exclude>
+                                <exclude>**/TestBigQueryInstanceCleaner.java</exclude>
                                 <exclude>**/TestBigQueryCaseInsensitiveMapping.java</exclude>
                             </excludes>
                         </configuration>
@@ -327,6 +368,9 @@
                         <configuration>
                             <includes>
                                 <include>**/TestBigQueryIntegrationSmokeTest.java</include>
+                                <include>**/TestBigQueryTypeMapping.java</include>
+                                <include>**/TestBigQueryMetadata.java</include>
+                                <include>**/TestBigQueryInstanceCleaner.java</include>
                             </includes>
                         </configuration>
                     </plugin>

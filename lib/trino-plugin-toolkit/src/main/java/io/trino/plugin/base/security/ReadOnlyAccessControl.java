@@ -19,6 +19,8 @@ import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.security.Privilege;
 import io.trino.spi.security.TrinoPrincipal;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static io.trino.spi.security.AccessDeniedException.denyAddColumn;
@@ -36,9 +38,12 @@ import static io.trino.spi.security.AccessDeniedException.denyGrantTablePrivileg
 import static io.trino.spi.security.AccessDeniedException.denyInsertTable;
 import static io.trino.spi.security.AccessDeniedException.denyRefreshMaterializedView;
 import static io.trino.spi.security.AccessDeniedException.denyRenameColumn;
+import static io.trino.spi.security.AccessDeniedException.denyRenameMaterializedView;
 import static io.trino.spi.security.AccessDeniedException.denyRenameTable;
 import static io.trino.spi.security.AccessDeniedException.denyRenameView;
 import static io.trino.spi.security.AccessDeniedException.denyRevokeTablePrivilege;
+import static io.trino.spi.security.AccessDeniedException.denySetMaterializedViewProperties;
+import static io.trino.spi.security.AccessDeniedException.denySetTableProperties;
 import static io.trino.spi.security.AccessDeniedException.denyUpdateTableColumns;
 
 public class ReadOnlyAccessControl
@@ -84,6 +89,12 @@ public class ReadOnlyAccessControl
     }
 
     @Override
+    public void checkCanCreateTable(ConnectorSecurityContext context, SchemaTableName tableName, Map<String, Object> properties)
+    {
+        denyCreateTable(tableName.toString());
+    }
+
+    @Override
     public void checkCanDropTable(ConnectorSecurityContext context, SchemaTableName tableName)
     {
         denyDropTable(tableName.toString());
@@ -93,6 +104,12 @@ public class ReadOnlyAccessControl
     public void checkCanRenameTable(ConnectorSecurityContext context, SchemaTableName tableName, SchemaTableName newTableName)
     {
         denyRenameTable(tableName.toString(), newTableName.toString());
+    }
+
+    @Override
+    public void checkCanSetTableProperties(ConnectorSecurityContext context, SchemaTableName tableName, Map<String, Optional<Object>> properties)
+    {
+        denySetTableProperties(tableName.toString());
     }
 
     @Override
@@ -191,6 +208,12 @@ public class ReadOnlyAccessControl
     }
 
     @Override
+    public void checkCanCreateMaterializedView(ConnectorSecurityContext context, SchemaTableName materializedViewName, Map<String, Object> properties)
+    {
+        denyCreateMaterializedView(materializedViewName.toString());
+    }
+
+    @Override
     public void checkCanRefreshMaterializedView(ConnectorSecurityContext context, SchemaTableName materializedViewName)
     {
         denyRefreshMaterializedView(materializedViewName.toString());
@@ -200,6 +223,18 @@ public class ReadOnlyAccessControl
     public void checkCanDropMaterializedView(ConnectorSecurityContext context, SchemaTableName materializedViewName)
     {
         denyDropMaterializedView(materializedViewName.toString());
+    }
+
+    @Override
+    public void checkCanRenameMaterializedView(ConnectorSecurityContext context, SchemaTableName viewName, SchemaTableName newViewName)
+    {
+        denyRenameMaterializedView(viewName.toString(), newViewName.toString());
+    }
+
+    @Override
+    public void checkCanSetMaterializedViewProperties(ConnectorSecurityContext context, SchemaTableName materializedViewName, Map<String, Optional<Object>> properties)
+    {
+        denySetMaterializedViewProperties(materializedViewName.toString());
     }
 
     @Override
@@ -221,25 +256,25 @@ public class ReadOnlyAccessControl
     }
 
     @Override
-    public void checkCanShowRoleAuthorizationDescriptors(ConnectorSecurityContext context, String catalogName)
+    public void checkCanShowRoleAuthorizationDescriptors(ConnectorSecurityContext context)
     {
         // allow
     }
 
     @Override
-    public void checkCanShowRoles(ConnectorSecurityContext context, String catalogName)
+    public void checkCanShowRoles(ConnectorSecurityContext context)
     {
         // allow
     }
 
     @Override
-    public void checkCanShowCurrentRoles(ConnectorSecurityContext context, String catalogName)
+    public void checkCanShowCurrentRoles(ConnectorSecurityContext context)
     {
         // allow
     }
 
     @Override
-    public void checkCanShowRoleGrants(ConnectorSecurityContext context, String catalogName)
+    public void checkCanShowRoleGrants(ConnectorSecurityContext context)
     {
         // allow
     }

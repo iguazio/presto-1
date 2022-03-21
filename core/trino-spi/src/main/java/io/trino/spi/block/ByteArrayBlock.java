@@ -87,7 +87,13 @@ public class ByteArrayBlock
     @Override
     public long getPositionsSizeInBytes(boolean[] positions)
     {
-        return (Byte.BYTES + Byte.BYTES) * (long) countUsedPositions(positions);
+        return getPositionsSizeInBytes(positions, countUsedPositions(positions));
+    }
+
+    @Override
+    public long getPositionsSizeInBytes(boolean[] positions, int selectedPositionsCount)
+    {
+        return (long) (Byte.BYTES + Byte.BYTES) * selectedPositionsCount;
     }
 
     @Override
@@ -139,14 +145,6 @@ public class ByteArrayBlock
     {
         checkReadablePosition(position);
         return valueIsNull != null && valueIsNull[position + arrayOffset];
-    }
-
-    @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        checkReadablePosition(position);
-        blockBuilder.writeByte(values[position + arrayOffset]);
-        blockBuilder.closeEntry();
     }
 
     @Override

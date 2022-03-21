@@ -18,6 +18,7 @@ import org.openjdk.jol.info.ClassLayout;
 
 import java.util.function.BiConsumer;
 
+import static io.trino.spi.block.BlockUtil.ensureBlocksAreLoaded;
 import static java.lang.String.format;
 
 public class SingleRowBlock
@@ -26,10 +27,11 @@ public class SingleRowBlock
     private static final int INSTANCE_SIZE = ClassLayout.parseClass(SingleRowBlock.class).instanceSize();
 
     private final Block[] fieldBlocks;
+    private final int rowIndex;
 
     SingleRowBlock(int rowIndex, Block[] fieldBlocks)
     {
-        super(rowIndex);
+        this.rowIndex = rowIndex;
         this.fieldBlocks = fieldBlocks;
     }
 
@@ -61,7 +63,7 @@ public class SingleRowBlock
     {
         long sizeInBytes = 0;
         for (int i = 0; i < fieldBlocks.length; i++) {
-            sizeInBytes += getRawFieldBlock(i).getRegionSizeInBytes(rowIndex, 1);
+            sizeInBytes += getRawFieldBlock(i).getRegionSizeInBytes(getRowIndex(), 1);
         }
         return sizeInBytes;
     }
@@ -91,6 +93,7 @@ public class SingleRowBlock
         return SingleRowBlockEncoding.NAME;
     }
 
+    @Override
     public int getRowIndex()
     {
         return rowIndex;
@@ -116,19 +119,11 @@ public class SingleRowBlock
     @Override
     public Block getLoadedBlock()
     {
-        boolean allLoaded = true;
-        Block[] loadedFieldBlocks = new Block[fieldBlocks.length];
-
-        for (int i = 0; i < fieldBlocks.length; i++) {
-            loadedFieldBlocks[i] = fieldBlocks[i].getLoadedBlock();
-            if (loadedFieldBlocks[i] != fieldBlocks[i]) {
-                allLoaded = false;
-            }
-        }
-
-        if (allLoaded) {
+        Block[] loadedFieldBlocks = ensureBlocksAreLoaded(fieldBlocks);
+        if (loadedFieldBlocks == fieldBlocks) {
+            // All blocks are already loaded
             return this;
         }
-        return new SingleRowBlock(rowIndex, loadedFieldBlocks);
+        return new SingleRowBlock(getRowIndex(), loadedFieldBlocks);
     }
 }

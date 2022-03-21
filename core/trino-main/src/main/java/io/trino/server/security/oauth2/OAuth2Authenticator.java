@@ -13,19 +13,25 @@
  */
 package io.trino.server.security.oauth2;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
+import com.google.common.collect.ImmutableSet;
 import io.trino.server.security.AbstractBearerAuthenticator;
 import io.trino.server.security.AuthenticationException;
+import io.trino.server.security.UserMapping;
+import io.trino.server.security.UserMappingException;
+import io.trino.spi.security.BasicPrincipal;
+import io.trino.spi.security.Identity;
 
 import javax.inject.Inject;
 import javax.ws.rs.container.ContainerRequestContext;
 
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static io.trino.server.security.UserMapping.createUserMapping;
-import static io.trino.server.security.oauth2.OAuth2CallbackResource.CALLBACK_ENDPOINT;
+import static io.trino.server.security.oauth2.OAuth2TokenExchangeResource.getInitiateUri;
 import static io.trino.server.security.oauth2.OAuth2TokenExchangeResource.getTokenUri;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -34,26 +40,46 @@ public class OAuth2Authenticator
         extends AbstractBearerAuthenticator
 {
     private final OAuth2Service service;
+    private final String principalField;
+    private final Optional<String> groupsField;
+    private final UserMapping userMapping;
 
     @Inject
     public OAuth2Authenticator(OAuth2Service service, OAuth2Config config)
     {
-        super(config.getPrincipalField(), createUserMapping(config.getUserMappingPattern(), config.getUserMappingFile()));
         this.service = requireNonNull(service, "service is null");
+        this.principalField = config.getPrincipalField();
+        groupsField = requireNonNull(config.getGroupsField(), "groupsField is null");
+        userMapping = createUserMapping(config.getUserMappingPattern(), config.getUserMappingFile());
     }
 
     @Override
-    protected Jws<Claims> parseClaimsJws(String jws)
+    protected Optional<Identity> createIdentity(String token)
+            throws UserMappingException
     {
-        return service.parseClaimsJws(jws);
+        try {
+            Optional<Map<String, Object>> claims = service.convertTokenToClaims(token);
+            if (claims.isEmpty()) {
+                return Optional.empty();
+            }
+            String principal = (String) claims.get().get(principalField);
+            Identity.Builder builder = Identity.forUser(userMapping.mapUser(principal));
+            builder.withPrincipal(new BasicPrincipal(principal));
+            groupsField.flatMap(field -> Optional.ofNullable((List<String>) claims.get().get(field)))
+                    .ifPresent(groups -> builder.withGroups(ImmutableSet.copyOf(groups)));
+            return Optional.of(builder.build());
+        }
+        catch (ChallengeFailedException e) {
+            return Optional.empty();
+        }
     }
 
     @Override
     protected AuthenticationException needAuthentication(ContainerRequestContext request, String message)
     {
         UUID authId = UUID.randomUUID();
-        URI redirectUri = service.startRestChallenge(request.getUriInfo().getBaseUri().resolve(CALLBACK_ENDPOINT), authId);
+        URI initiateUri = request.getUriInfo().getBaseUri().resolve(getInitiateUri(authId));
         URI tokenUri = request.getUriInfo().getBaseUri().resolve(getTokenUri(authId));
-        return new AuthenticationException(message, format("Bearer x_redirect_server=\"%s\", x_token_server=\"%s\"", redirectUri, tokenUri));
+        return new AuthenticationException(message, format("Bearer x_redirect_server=\"%s\", x_token_server=\"%s\"", initiateUri, tokenUri));
     }
 }

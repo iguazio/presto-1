@@ -17,11 +17,11 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 
 import java.util.Map;
 import java.util.Optional;
 
+import static com.google.inject.util.Modules.EMPTY_MODULE;
 import static io.trino.plugin.iceberg.InternalIcebergConnectorFactory.createConnector;
 import static java.util.Objects.requireNonNull;
 
@@ -29,12 +29,12 @@ public class TestingIcebergConnectorFactory
         implements ConnectorFactory
 {
     private final Optional<HiveMetastore> metastore;
-    private final boolean trackMetadataIo;
+    private final Optional<FileIoProvider> fileIoProvider;
 
-    public TestingIcebergConnectorFactory(Optional<HiveMetastore> metastore, boolean trackMetadataIo)
+    public TestingIcebergConnectorFactory(Optional<HiveMetastore> metastore, Optional<FileIoProvider> fileIoProvider)
     {
         this.metastore = requireNonNull(metastore, "metastore is null");
-        this.trackMetadataIo = trackMetadataIo;
+        this.fileIoProvider = requireNonNull(fileIoProvider, "fileIoProvider is null");
     }
 
     @Override
@@ -44,14 +44,8 @@ public class TestingIcebergConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new IcebergHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> config, ConnectorContext context)
     {
-        return createConnector(catalogName, config, context, metastore, trackMetadataIo);
+        return createConnector(catalogName, config, context, EMPTY_MODULE, metastore, fileIoProvider);
     }
 }

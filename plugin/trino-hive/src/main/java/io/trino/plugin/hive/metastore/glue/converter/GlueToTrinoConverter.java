@@ -61,21 +61,23 @@ public final class GlueToTrinoConverter
                 .setLocation(Optional.ofNullable(glueDb.getLocationUri()))
                 .setComment(Optional.ofNullable(glueDb.getDescription()))
                 .setParameters(firstNonNull(glueDb.getParameters(), ImmutableMap.of()))
-                .setOwnerName(PUBLIC_OWNER)
-                .setOwnerType(PrincipalType.ROLE)
+                .setOwnerName(Optional.of(PUBLIC_OWNER))
+                .setOwnerType(Optional.of(PrincipalType.ROLE))
                 .build();
     }
 
     public static Table convertTable(com.amazonaws.services.glue.model.Table glueTable, String dbName)
     {
-        requireNonNull(glueTable.getStorageDescriptor(), "Table StorageDescriptor is null");
+        // TODO (https://github.com/trinodb/trino/issues/10902) glueTable.getStorageDescriptor() is an optional field in Glue
+        requireNonNull(glueTable.getStorageDescriptor(), () -> format("Table StorageDescriptor is null for table %s.%s (%s)", dbName, glueTable.getName(), glueTable));
+
         Map<String, String> tableParameters = convertParameters(glueTable.getParameters());
         StorageDescriptor sd = glueTable.getStorageDescriptor();
 
         Table.Builder tableBuilder = Table.builder()
                 .setDatabaseName(dbName)
                 .setTableName(glueTable.getName())
-                .setOwner(nullToEmpty(glueTable.getOwner()))
+                .setOwner(Optional.ofNullable(glueTable.getOwner()))
                 // Athena treats missing table type as EXTERNAL_TABLE.
                 .setTableType(firstNonNull(glueTable.getTableType(), EXTERNAL_TABLE.name()))
                 .setDataColumns(convertColumns(sd.getColumns(), sd.getSerdeInfo().getSerializationLibrary()))
@@ -94,11 +96,11 @@ public final class GlueToTrinoConverter
         return tableBuilder.build();
     }
 
-    private static Column convertColumn(com.amazonaws.services.glue.model.Column glueColumn, String serDe)
+    private static Column convertColumn(com.amazonaws.services.glue.model.Column glueColumn, String serde)
     {
         // OpenCSVSerde deserializes columns from csv file into strings, so we set the column type from the metastore
         // to string to avoid cast exceptions.
-        if (HiveStorageFormat.CSV.getSerDe().equals(serDe)) {
+        if (HiveStorageFormat.CSV.getSerde().equals(serde)) {
             //TODO(https://github.com/trinodb/trino/issues/7240) Add tests
             return new Column(glueColumn.getName(), HiveType.HIVE_STRING, Optional.ofNullable(glueColumn.getComment()));
         }
@@ -107,9 +109,9 @@ public final class GlueToTrinoConverter
         }
     }
 
-    private static List<Column> convertColumns(List<com.amazonaws.services.glue.model.Column> glueColumns, String serDe)
+    private static List<Column> convertColumns(List<com.amazonaws.services.glue.model.Column> glueColumns, String serde)
     {
-        return mappedCopy(glueColumns, glueColumn -> convertColumn(glueColumn, serDe));
+        return mappedCopy(glueColumns, glueColumn -> convertColumn(glueColumn, serde));
     }
 
     private static Map<String, String> convertParameters(Map<String, String> parameters)
@@ -147,7 +149,7 @@ public final class GlueToTrinoConverter
             this.tableName = requireNonNull(table.getTableName(), "tableName is null");
             this.tableParameters = convertParameters(table.getParameters());
             this.columnsConverter = memoizeLast(glueColumns -> convertColumns(glueColumns,
-                    table.getStorage().getStorageFormat().getSerDe()));
+                    table.getStorage().getStorageFormat().getSerde()));
         }
 
         @Override

@@ -13,20 +13,37 @@
  */
 package io.trino.operator.aggregation.state;
 
+import io.trino.annotation.UsedByGeneratedCode;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
 import io.trino.spi.function.AccumulatorStateSerializer;
 import io.trino.spi.type.Type;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static io.trino.spi.type.DoubleType.DOUBLE;
+import static java.util.Objects.requireNonNull;
 
 public class NullableDoubleStateSerializer
         implements AccumulatorStateSerializer<NullableDoubleState>
 {
+    private final Type type;
+
+    @UsedByGeneratedCode
+    public NullableDoubleStateSerializer()
+    {
+        this(DOUBLE);
+    }
+
+    public NullableDoubleStateSerializer(Type type)
+    {
+        this.type = requireNonNull(type, "type is null");
+        checkArgument(type.getJavaType() == double.class, "Type must use double stack type: " + type);
+    }
+
     @Override
     public Type getSerializedType()
     {
-        return DOUBLE;
+        return type;
     }
 
     @Override
@@ -36,14 +53,19 @@ public class NullableDoubleStateSerializer
             out.appendNull();
         }
         else {
-            DOUBLE.writeDouble(out, state.getDouble());
+            type.writeDouble(out, state.getValue());
         }
     }
 
     @Override
     public void deserialize(Block block, int index, NullableDoubleState state)
     {
-        state.setNull(false);
-        state.setDouble(DOUBLE.getDouble(block, index));
+        if (block.isNull(index)) {
+            state.setNull(true);
+        }
+        else {
+            state.setNull(false);
+            state.setValue(type.getDouble(block, index));
+        }
     }
 }

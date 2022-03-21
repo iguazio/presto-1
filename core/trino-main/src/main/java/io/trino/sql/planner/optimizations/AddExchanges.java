@@ -25,10 +25,9 @@ import io.trino.cost.CachingStatsProvider;
 import io.trino.cost.StatsCalculator;
 import io.trino.cost.StatsProvider;
 import io.trino.execution.warnings.WarningCollector;
-import io.trino.metadata.Metadata;
 import io.trino.spi.connector.GroupingProperty;
 import io.trino.spi.connector.LocalProperty;
-import io.trino.spi.type.TypeOperators;
+import io.trino.sql.PlannerContext;
 import io.trino.sql.planner.DomainTranslator;
 import io.trino.sql.planner.Partitioning;
 import io.trino.sql.planner.PartitioningScheme;
@@ -66,6 +65,7 @@ import io.trino.sql.planner.plan.SortNode;
 import io.trino.sql.planner.plan.SpatialJoinNode;
 import io.trino.sql.planner.plan.StatisticsWriterNode;
 import io.trino.sql.planner.plan.TableDeleteNode;
+import io.trino.sql.planner.plan.TableExecuteNode;
 import io.trino.sql.planner.plan.TableFinishNode;
 import io.trino.sql.planner.plan.TableScanNode;
 import io.trino.sql.planner.plan.TableWriterNode;
@@ -120,18 +120,14 @@ import static java.util.stream.Collectors.toList;
 public class AddExchanges
         implements PlanOptimizer
 {
+    private final PlannerContext plannerContext;
     private final TypeAnalyzer typeAnalyzer;
-    private final Metadata metadata;
-    private final TypeOperators typeOperators;
-    private final DomainTranslator domainTranslator;
     private final StatsCalculator statsCalculator;
 
-    public AddExchanges(Metadata metadata, TypeOperators typeOperators, TypeAnalyzer typeAnalyzer, StatsCalculator statsCalculator)
+    public AddExchanges(PlannerContext plannerContext, TypeAnalyzer typeAnalyzer, StatsCalculator statsCalculator)
     {
-        this.metadata = metadata;
-        this.typeOperators = typeOperators;
-        this.domainTranslator = new DomainTranslator(metadata);
-        this.typeAnalyzer = typeAnalyzer;
+        this.plannerContext = requireNonNull(plannerContext, "plannerContext is null");
+        this.typeAnalyzer = requireNonNull(typeAnalyzer, "typeAnalyzer is null");
         this.statsCalculator = requireNonNull(statsCalculator, "statsCalculator is null");
     }
 
@@ -150,6 +146,7 @@ public class AddExchanges
         private final TypeProvider types;
         private final StatsProvider statsProvider;
         private final Session session;
+        private final DomainTranslator domainTranslator;
         private final boolean distributedIndexJoins;
         private final boolean preferStreamingOperators;
         private final boolean redistributeWrites;
@@ -162,6 +159,7 @@ public class AddExchanges
             this.types = symbolAllocator.getTypes();
             this.statsProvider = new CachingStatsProvider(statsCalculator, session, types);
             this.session = session;
+            this.domainTranslator = new DomainTranslator(plannerContext);
             this.distributedIndexJoins = SystemSessionProperties.isDistributedIndexJoinEnabled(session);
             this.redistributeWrites = SystemSessionProperties.isRedistributeWrites(session);
             this.scaleWriters = SystemSessionProperties.isScaleWriters(session);
@@ -216,7 +214,7 @@ public class AddExchanges
         {
             Set<Symbol> partitioningRequirement = ImmutableSet.copyOf(node.getGroupingKeys());
 
-            boolean preferSingleNode = node.hasSingleNodeExecutionPreference(metadata);
+            boolean preferSingleNode = node.hasSingleNodeExecutionPreference(plannerContext.getMetadata());
             PreferredProperties preferredProperties = preferSingleNode ? PreferredProperties.undistributed() : PreferredProperties.any();
 
             if (!node.getGroupingKeys().isEmpty()) {
@@ -565,9 +563,8 @@ public class AddExchanges
                         (TableScanNode) node.getSource(),
                         true,
                         session,
-                        types,
-                        metadata,
-                        typeOperators,
+                        symbolAllocator,
+                        plannerContext,
                         typeAnalyzer,
                         statsProvider,
                         domainTranslator);
@@ -594,28 +591,38 @@ public class AddExchanges
         @Override
         public PlanWithProperties visitTableWriter(TableWriterNode node, PreferredProperties preferredProperties)
         {
-            PlanWithProperties source = node.getSource().accept(this, preferredProperties);
+            return visitTableWriter(node, node.getPartitioningScheme(), node.getSource(), preferredProperties);
+        }
 
-            Optional<PartitioningScheme> partitioningScheme = node.getPartitioningScheme();
+        @Override
+        public PlanWithProperties visitTableExecute(TableExecuteNode node, PreferredProperties preferredProperties)
+        {
+            return visitTableWriter(node, node.getPartitioningScheme(), node.getSource(), preferredProperties);
+        }
+
+        private PlanWithProperties visitTableWriter(PlanNode node, Optional<PartitioningScheme> partitioningScheme, PlanNode source, PreferredProperties preferredProperties)
+        {
+            PlanWithProperties newSource = source.accept(this, preferredProperties);
+
             if (partitioningScheme.isEmpty()) {
                 if (scaleWriters) {
-                    partitioningScheme = Optional.of(new PartitioningScheme(Partitioning.create(SCALED_WRITER_DISTRIBUTION, ImmutableList.of()), source.getNode().getOutputSymbols()));
+                    partitioningScheme = Optional.of(new PartitioningScheme(Partitioning.create(SCALED_WRITER_DISTRIBUTION, ImmutableList.of()), newSource.getNode().getOutputSymbols()));
                 }
                 else if (redistributeWrites) {
-                    partitioningScheme = Optional.of(new PartitioningScheme(Partitioning.create(FIXED_ARBITRARY_DISTRIBUTION, ImmutableList.of()), source.getNode().getOutputSymbols()));
+                    partitioningScheme = Optional.of(new PartitioningScheme(Partitioning.create(FIXED_ARBITRARY_DISTRIBUTION, ImmutableList.of()), newSource.getNode().getOutputSymbols()));
                 }
             }
 
-            if (partitioningScheme.isPresent() && !source.getProperties().isCompatibleTablePartitioningWith(partitioningScheme.get().getPartitioning(), false, metadata, session)) {
-                source = withDerivedProperties(
+            if (partitioningScheme.isPresent() && !newSource.getProperties().isCompatibleTablePartitioningWith(partitioningScheme.get().getPartitioning(), false, plannerContext.getMetadata(), session)) {
+                newSource = withDerivedProperties(
                         partitionedExchange(
                                 idAllocator.getNextId(),
                                 REMOTE,
-                                source.getNode(),
+                                newSource.getNode(),
                                 partitioningScheme.get()),
-                        source.getProperties());
+                        newSource.getProperties());
             }
-            return rebaseAndDeriveProperties(node, source);
+            return rebaseAndDeriveProperties(node, newSource);
         }
 
         @Override
@@ -757,7 +764,7 @@ public class AddExchanges
             if (left.getProperties().isNodePartitionedOn(leftSymbols) && !left.getProperties().isSingleNode()) {
                 Partitioning rightPartitioning = left.getProperties().translate(createTranslator(leftToRight)).getNodePartitioning().get();
                 right = node.getRight().accept(this, PreferredProperties.partitioned(rightPartitioning));
-                if (!right.getProperties().isCompatibleTablePartitioningWith(left.getProperties(), rightToLeft::get, metadata, session)) {
+                if (!right.getProperties().isCompatibleTablePartitioningWith(left.getProperties(), rightToLeft::get, plannerContext.getMetadata(), session)) {
                     right = withDerivedProperties(
                             partitionedExchange(idAllocator.getNextId(), REMOTE, right.getNode(), new PartitioningScheme(rightPartitioning, right.getNode().getOutputSymbols())),
                             right.getProperties());
@@ -782,7 +789,7 @@ public class AddExchanges
                 }
             }
 
-            verify(left.getProperties().isCompatibleTablePartitioningWith(right.getProperties(), leftToRight::get, metadata, session));
+            verify(left.getProperties().isCompatibleTablePartitioningWith(right.getProperties(), leftToRight::get, plannerContext.getMetadata(), session));
 
             // if colocated joins are disabled, force redistribute when using a custom partitioning
             if (!isColocatedJoinEnabled(session) && hasMultipleSources(left.getNode(), right.getNode())) {
@@ -901,7 +908,7 @@ public class AddExchanges
                 if (source.getProperties().isNodePartitionedOn(sourceSymbols) && !source.getProperties().isSingleNode()) {
                     Partitioning filteringPartitioning = source.getProperties().translate(createTranslator(sourceToFiltering)).getNodePartitioning().get();
                     filteringSource = node.getFilteringSource().accept(this, PreferredProperties.partitionedWithNullsAndAnyReplicated(filteringPartitioning));
-                    if (!source.getProperties().withReplicatedNulls(true).isCompatibleTablePartitioningWith(filteringSource.getProperties(), sourceToFiltering::get, metadata, session)) {
+                    if (!source.getProperties().withReplicatedNulls(true).isCompatibleTablePartitioningWith(filteringSource.getProperties(), sourceToFiltering::get, plannerContext.getMetadata(), session)) {
                         filteringSource = withDerivedProperties(
                                 partitionedExchange(idAllocator.getNextId(), REMOTE, filteringSource.getNode(), new PartitioningScheme(
                                         filteringPartitioning,
@@ -931,7 +938,7 @@ public class AddExchanges
                     }
                 }
 
-                verify(source.getProperties().withReplicatedNulls(true).isCompatibleTablePartitioningWith(filteringSource.getProperties(), sourceToFiltering::get, metadata, session));
+                verify(source.getProperties().withReplicatedNulls(true).isCompatibleTablePartitioningWith(filteringSource.getProperties(), sourceToFiltering::get, plannerContext.getMetadata(), session));
 
                 // if colocated joins are disabled, force redistribute when using a custom partitioning
                 if (!isColocatedJoinEnabled(session) && hasMultipleSources(source.getNode(), filteringSource.getNode())) {
@@ -1101,7 +1108,7 @@ public class AddExchanges
                             .build();
 
                     PlanWithProperties source = node.getSources().get(sourceIndex).accept(this, childPreferred);
-                    if (!source.getProperties().isCompatibleTablePartitioningWith(childPartitioning, nullsAndAnyReplicated, metadata, session)) {
+                    if (!source.getProperties().isCompatibleTablePartitioningWith(childPartitioning, nullsAndAnyReplicated, plannerContext.getMetadata(), session)) {
                         source = withDerivedProperties(
                                 partitionedExchange(
                                         idAllocator.getNextId(),
@@ -1290,7 +1297,7 @@ public class AddExchanges
         private ActualProperties deriveProperties(PlanNode result, List<ActualProperties> inputProperties)
         {
             // TODO: move this logic to PlanSanityChecker once PropertyDerivations.deriveProperties fully supports local exchanges
-            ActualProperties outputProperties = PropertyDerivations.deriveProperties(result, inputProperties, metadata, typeOperators, session, types, typeAnalyzer);
+            ActualProperties outputProperties = PropertyDerivations.deriveProperties(result, inputProperties, plannerContext, session, types, typeAnalyzer);
             verify(result instanceof SemiJoinNode || inputProperties.stream().noneMatch(ActualProperties::isNullsAndAnyReplicated) || outputProperties.isNullsAndAnyReplicated(),
                     "SemiJoinNode is the only node that can strip null replication");
             return outputProperties;
@@ -1298,7 +1305,7 @@ public class AddExchanges
 
         private ActualProperties derivePropertiesRecursively(PlanNode result)
         {
-            return PropertyDerivations.derivePropertiesRecursively(result, metadata, typeOperators, session, types, typeAnalyzer);
+            return PropertyDerivations.derivePropertiesRecursively(result, plannerContext, session, types, typeAnalyzer);
         }
 
         private PreferredProperties computePreference(PreferredProperties preferredProperties, PreferredProperties parentPreferredProperties)

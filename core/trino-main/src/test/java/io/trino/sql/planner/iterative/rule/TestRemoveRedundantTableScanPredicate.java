@@ -19,25 +19,21 @@ import io.trino.connector.CatalogName;
 import io.trino.metadata.TableHandle;
 import io.trino.plugin.tpch.TpchColumnHandle;
 import io.trino.plugin.tpch.TpchTableHandle;
-import io.trino.plugin.tpch.TpchTableLayoutHandle;
 import io.trino.plugin.tpch.TpchTransactionHandle;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
-import io.trino.spi.type.TypeOperators;
 import io.trino.sql.planner.FunctionCallBuilder;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import io.trino.sql.tree.ArithmeticBinaryExpression;
 import io.trino.sql.tree.ComparisonExpression;
 import io.trino.sql.tree.GenericLiteral;
-import io.trino.sql.tree.LogicalBinaryExpression;
+import io.trino.sql.tree.LogicalExpression;
 import io.trino.sql.tree.QualifiedName;
 import io.trino.sql.tree.SymbolReference;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
-
-import java.util.Optional;
 
 import static io.trino.spi.predicate.Domain.singleValue;
 import static io.trino.spi.type.BigintType.BIGINT;
@@ -47,8 +43,7 @@ import static io.trino.sql.planner.assertions.PlanMatchPattern.filter;
 import static io.trino.sql.planner.iterative.rule.test.PlanBuilder.expression;
 import static io.trino.sql.tree.ArithmeticBinaryExpression.Operator.MODULUS;
 import static io.trino.sql.tree.ComparisonExpression.Operator.EQUAL;
-import static io.trino.sql.tree.LogicalBinaryExpression.Operator.AND;
-import static io.trino.sql.tree.LogicalBinaryExpression.Operator.OR;
+import static io.trino.sql.tree.LogicalExpression.Operator.AND;
 
 public class TestRemoveRedundantTableScanPredicate
         extends BaseRuleTest
@@ -60,21 +55,19 @@ public class TestRemoveRedundantTableScanPredicate
     @BeforeClass
     public void setUpBeforeClass()
     {
-        removeRedundantTableScanPredicate = new RemoveRedundantTableScanPredicate(tester().getMetadata(), new TypeOperators());
+        removeRedundantTableScanPredicate = new RemoveRedundantTableScanPredicate(tester().getPlannerContext(), tester().getTypeAnalyzer());
         CatalogName catalogName = tester().getCurrentConnectorId();
-        TpchTableHandle nation = new TpchTableHandle("nation", 1.0);
+        TpchTableHandle nation = new TpchTableHandle("sf1", "nation", 1.0);
         nationTableHandle = new TableHandle(
                 catalogName,
                 nation,
-                TpchTransactionHandle.INSTANCE,
-                Optional.of(new TpchTableLayoutHandle(nation, TupleDomain.all())));
+                TpchTransactionHandle.INSTANCE);
 
-        TpchTableHandle orders = new TpchTableHandle("orders", 1.0);
+        TpchTableHandle orders = new TpchTableHandle("sf1", "orders", 1.0);
         ordersTableHandle = new TableHandle(
                 catalogName,
                 orders,
-                TpchTransactionHandle.INSTANCE,
-                Optional.of(new TpchTableLayoutHandle(orders, TupleDomain.all())));
+                TpchTransactionHandle.INSTANCE);
     }
 
     @Test
@@ -147,13 +140,12 @@ public class TestRemoveRedundantTableScanPredicate
         ColumnHandle columnHandle = new TpchColumnHandle("nationkey", BIGINT);
         tester().assertThat(removeRedundantTableScanPredicate)
                 .on(p -> p.filter(
-                        new LogicalBinaryExpression(
+                        new LogicalExpression(
                                 AND,
-                                new LogicalBinaryExpression(
-                                        AND,
+                                ImmutableList.of(
                                         new ComparisonExpression(
                                                 EQUAL,
-                                                new FunctionCallBuilder(tester().getMetadata())
+                                                FunctionCallBuilder.resolve(tester().getSession(), tester().getMetadata())
                                                         .setName(QualifiedName.of("rand"))
                                                         .build(),
                                                 new GenericLiteral("BIGINT", "42")),
@@ -163,17 +155,16 @@ public class TestRemoveRedundantTableScanPredicate
                                                         MODULUS,
                                                         new SymbolReference("nationkey"),
                                                         new GenericLiteral("BIGINT", "17")),
-                                                new GenericLiteral("BIGINT", "44"))),
-                                new LogicalBinaryExpression(
-                                        OR,
-                                        new ComparisonExpression(
-                                                EQUAL,
-                                                new SymbolReference("nationkey"),
                                                 new GenericLiteral("BIGINT", "44")),
-                                        new ComparisonExpression(
-                                                EQUAL,
-                                                new SymbolReference("nationkey"),
-                                                new GenericLiteral("BIGINT", "45")))),
+                                        LogicalExpression.or(
+                                                new ComparisonExpression(
+                                                        EQUAL,
+                                                        new SymbolReference("nationkey"),
+                                                        new GenericLiteral("BIGINT", "44")),
+                                                new ComparisonExpression(
+                                                        EQUAL,
+                                                        new SymbolReference("nationkey"),
+                                                        new GenericLiteral("BIGINT", "45"))))),
                         p.tableScan(
                                 nationTableHandle,
                                 ImmutableList.of(p.symbol("nationkey", BIGINT)),
@@ -182,11 +173,10 @@ public class TestRemoveRedundantTableScanPredicate
                                         columnHandle, NullableValue.of(BIGINT, (long) 44))))))
                 .matches(
                         filter(
-                                new LogicalBinaryExpression(
-                                        AND,
+                                LogicalExpression.and(
                                         new ComparisonExpression(
                                                 EQUAL,
-                                                new FunctionCallBuilder(tester().getMetadata())
+                                                FunctionCallBuilder.resolve(tester().getSession(), tester().getMetadata())
                                                         .setName(QualifiedName.of("rand"))
                                                         .build(),
                                                 new GenericLiteral("BIGINT", "42")),
@@ -211,7 +201,7 @@ public class TestRemoveRedundantTableScanPredicate
                 .on(p -> p.filter(
                         new ComparisonExpression(
                                 EQUAL,
-                                new FunctionCallBuilder(tester().getMetadata())
+                                FunctionCallBuilder.resolve(tester().getSession(), tester().getMetadata())
                                         .setName(QualifiedName.of("rand"))
                                         .build(),
                                 new GenericLiteral("BIGINT", "42")),

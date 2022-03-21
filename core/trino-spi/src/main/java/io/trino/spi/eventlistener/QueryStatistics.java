@@ -13,12 +13,18 @@
  */
 package io.trino.spi.eventlistener;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 
+/**
+ * This class is JSON serializable for convenience and serialization compatibility is not guaranteed across versions.
+ */
 public class QueryStatistics
 {
     private final Duration cpuTime;
@@ -31,8 +37,6 @@ public class QueryStatistics
     private final Optional<Duration> executionTime;
 
     private final long peakUserMemoryBytes;
-    // peak of user + system memory
-    private final long peakTotalNonRevocableMemoryBytes;
     private final long peakTaskUserMemory;
     private final long peakTaskTotalMemory;
     private final long physicalInputBytes;
@@ -66,6 +70,7 @@ public class QueryStatistics
      */
     private final Optional<String> planNodeStatsAndCosts;
 
+    @JsonCreator
     public QueryStatistics(
             Duration cpuTime,
             Duration wallTime,
@@ -76,7 +81,6 @@ public class QueryStatistics
             Optional<Duration> planningTime,
             Optional<Duration> executionTime,
             long peakUserMemoryBytes,
-            long peakTotalNonRevocableMemoryBytes,
             long peakTaskUserMemory,
             long peakTaskTotalMemory,
             long physicalInputBytes,
@@ -106,7 +110,6 @@ public class QueryStatistics
         this.planningTime = requireNonNull(planningTime, "planningTime is null");
         this.executionTime = requireNonNull(executionTime, "executionTime is null");
         this.peakUserMemoryBytes = peakUserMemoryBytes;
-        this.peakTotalNonRevocableMemoryBytes = peakTotalNonRevocableMemoryBytes;
         this.peakTaskUserMemory = peakTaskUserMemory;
         this.peakTaskTotalMemory = peakTaskTotalMemory;
         this.physicalInputBytes = physicalInputBytes;
@@ -128,146 +131,169 @@ public class QueryStatistics
         this.planNodeStatsAndCosts = requireNonNull(planNodeStatsAndCosts, "planNodeStatsAndCosts is null");
     }
 
+    @JsonProperty
     public Duration getCpuTime()
     {
         return cpuTime;
     }
 
+    @JsonProperty
     public Duration getWallTime()
     {
         return wallTime;
     }
 
+    @JsonProperty
     public Duration getQueuedTime()
     {
         return queuedTime;
     }
 
+    @JsonProperty
     public Optional<Duration> getScheduledTime()
     {
         return scheduledTime;
     }
 
+    @JsonProperty
     public Optional<Duration> getResourceWaitingTime()
     {
         return waitingTime;
     }
 
+    @JsonProperty
     public Optional<Duration> getAnalysisTime()
     {
         return analysisTime;
     }
 
+    @JsonProperty
     public Optional<Duration> getPlanningTime()
     {
         return planningTime;
     }
 
+    @JsonProperty
     public Optional<Duration> getExecutionTime()
     {
         return executionTime;
     }
 
+    @JsonProperty
     public long getPeakUserMemoryBytes()
     {
         return peakUserMemoryBytes;
     }
 
-    public long getPeakTotalNonRevocableMemoryBytes()
-    {
-        return peakTotalNonRevocableMemoryBytes;
-    }
-
+    @JsonProperty
     public long getPeakTaskUserMemory()
     {
         return peakTaskUserMemory;
     }
 
+    @JsonProperty
     public long getPeakTaskTotalMemory()
     {
         return peakTaskTotalMemory;
     }
 
+    @JsonProperty
     public long getPhysicalInputBytes()
     {
         return physicalInputBytes;
     }
 
+    @JsonProperty
     public long getPhysicalInputRows()
     {
         return physicalInputRows;
     }
 
+    @JsonProperty
     public long getInternalNetworkBytes()
     {
         return internalNetworkBytes;
     }
 
+    @JsonProperty
     public long getInternalNetworkRows()
     {
         return internalNetworkRows;
     }
 
+    @JsonProperty
     public long getTotalBytes()
     {
         return totalBytes;
     }
 
+    @JsonProperty
     public long getTotalRows()
     {
         return totalRows;
     }
 
+    @JsonProperty
     public long getOutputBytes()
     {
         return outputBytes;
     }
 
+    @JsonProperty
     public long getOutputRows()
     {
         return outputRows;
     }
 
+    @JsonProperty
     public long getWrittenBytes()
     {
         return writtenBytes;
     }
 
+    @JsonProperty
     public long getWrittenRows()
     {
         return writtenRows;
     }
 
+    @JsonProperty
     public double getCumulativeMemory()
     {
         return cumulativeMemory;
     }
 
+    @JsonProperty
     public List<StageGcStatistics> getStageGcStatistics()
     {
         return stageGcStatistics;
     }
 
+    @JsonProperty
     public int getCompletedSplits()
     {
         return completedSplits;
     }
 
+    @JsonProperty
     public boolean isComplete()
     {
         return complete;
     }
 
+    @JsonProperty
     public List<StageCpuDistribution> getCpuTimeDistribution()
     {
         return cpuTimeDistribution;
     }
 
+    @JsonProperty
     public List<String> getOperatorSummaries()
     {
         return operatorSummaries;
     }
 
+    @JsonProperty
     public Optional<String> getPlanNodeStatsAndCosts()
     {
         return planNodeStatsAndCosts;

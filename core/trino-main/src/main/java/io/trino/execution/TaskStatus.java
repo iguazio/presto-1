@@ -55,11 +55,12 @@ public class TaskStatus
     private final Set<Lifespan> completedDriverGroups;
 
     private final int queuedPartitionedDrivers;
+    private final long queuedPartitionedSplitsWeight;
     private final int runningPartitionedDrivers;
+    private final long runningPartitionedSplitsWeight;
     private final boolean outputBufferOverutilized;
     private final DataSize physicalWrittenDataSize;
     private final DataSize memoryReservation;
-    private final DataSize systemMemoryReservation;
     private final DataSize revocableMemoryReservation;
 
     private final long fullGcCount;
@@ -84,11 +85,12 @@ public class TaskStatus
             @JsonProperty("outputBufferOverutilized") boolean outputBufferOverutilized,
             @JsonProperty("physicalWrittenDataSize") DataSize physicalWrittenDataSize,
             @JsonProperty("memoryReservation") DataSize memoryReservation,
-            @JsonProperty("systemMemoryReservation") DataSize systemMemoryReservation,
             @JsonProperty("revocableMemoryReservation") DataSize revocableMemoryReservation,
             @JsonProperty("fullGcCount") long fullGcCount,
             @JsonProperty("fullGcTime") Duration fullGcTime,
-            @JsonProperty("dynamicFiltersVersion") long dynamicFiltersVersion)
+            @JsonProperty("dynamicFiltersVersion") long dynamicFiltersVersion,
+            @JsonProperty("queuedPartitionedSplitsWeight") long queuedPartitionedSplitsWeight,
+            @JsonProperty("runningPartitionedSplitsWeight") long runningPartitionedSplitsWeight)
     {
         this.taskId = requireNonNull(taskId, "taskId is null");
         this.taskInstanceId = requireNonNull(taskInstanceId, "taskInstanceId is null");
@@ -102,16 +104,19 @@ public class TaskStatus
 
         checkArgument(queuedPartitionedDrivers >= 0, "queuedPartitionedDrivers must be positive");
         this.queuedPartitionedDrivers = queuedPartitionedDrivers;
+        checkArgument(queuedPartitionedSplitsWeight >= 0, "queuedPartitionedSplitsWeight must be positive");
+        this.queuedPartitionedSplitsWeight = queuedPartitionedSplitsWeight;
 
         checkArgument(runningPartitionedDrivers >= 0, "runningPartitionedDrivers must be positive");
         this.runningPartitionedDrivers = runningPartitionedDrivers;
+        checkArgument(runningPartitionedSplitsWeight >= 0, "runningPartitionedSplitsWeight must be positive");
+        this.runningPartitionedSplitsWeight = runningPartitionedSplitsWeight;
 
         this.outputBufferOverutilized = outputBufferOverutilized;
 
         this.physicalWrittenDataSize = requireNonNull(physicalWrittenDataSize, "physicalWrittenDataSize is null");
 
         this.memoryReservation = requireNonNull(memoryReservation, "memoryReservation is null");
-        this.systemMemoryReservation = requireNonNull(systemMemoryReservation, "systemMemoryReservation is null");
         this.revocableMemoryReservation = requireNonNull(revocableMemoryReservation, "revocableMemoryReservation is null");
         this.failures = ImmutableList.copyOf(requireNonNull(failures, "failures is null"));
 
@@ -201,12 +206,6 @@ public class TaskStatus
     }
 
     @JsonProperty
-    public DataSize getSystemMemoryReservation()
-    {
-        return systemMemoryReservation;
-    }
-
-    @JsonProperty
     public DataSize getRevocableMemoryReservation()
     {
         return revocableMemoryReservation;
@@ -228,6 +227,18 @@ public class TaskStatus
     public long getDynamicFiltersVersion()
     {
         return dynamicFiltersVersion;
+    }
+
+    @JsonProperty
+    public long getQueuedPartitionedSplitsWeight()
+    {
+        return queuedPartitionedSplitsWeight;
+    }
+
+    @JsonProperty
+    public long getRunningPartitionedSplitsWeight()
+    {
+        return runningPartitionedSplitsWeight;
     }
 
     @Override
@@ -256,10 +267,11 @@ public class TaskStatus
                 DataSize.ofBytes(0),
                 DataSize.ofBytes(0),
                 DataSize.ofBytes(0),
-                DataSize.ofBytes(0),
                 0,
                 new Duration(0, MILLISECONDS),
-                INITIAL_DYNAMIC_FILTERS_VERSION);
+                INITIAL_DYNAMIC_FILTERS_VERSION,
+                0L,
+                0L);
     }
 
     public static TaskStatus failWith(TaskStatus taskStatus, TaskState state, List<ExecutionFailureInfo> exceptions)
@@ -278,10 +290,11 @@ public class TaskStatus
                 taskStatus.isOutputBufferOverutilized(),
                 taskStatus.getPhysicalWrittenDataSize(),
                 taskStatus.getMemoryReservation(),
-                taskStatus.getSystemMemoryReservation(),
                 taskStatus.getRevocableMemoryReservation(),
                 taskStatus.getFullGcCount(),
                 taskStatus.getFullGcTime(),
-                taskStatus.getDynamicFiltersVersion());
+                taskStatus.getDynamicFiltersVersion(),
+                taskStatus.getQueuedPartitionedSplitsWeight(),
+                taskStatus.getRunningPartitionedSplitsWeight());
     }
 }

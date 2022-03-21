@@ -246,7 +246,7 @@ public class TestMapOperators
         assertFunction(
                 "CAST(MAP(ARRAY[1, 2], ARRAY[TIMESTAMP '1970-01-01 00:00:01', null]) AS JSON)",
                 JSON,
-                format("{\"1\":\"%s\",\"2\":null}", sqlTimestampOf(0, 1970, 1, 1, 0, 0, 1, 0).toString()));
+                format("{\"1\":\"%s\",\"2\":null}", sqlTimestampOf(0, 1970, 1, 1, 0, 0, 1, 0)));
         assertFunction(
                 "CAST(MAP(ARRAY[2, 5, 3], ARRAY[DATE '2001-08-22', DATE '2001-08-23', null]) AS JSON)",
                 JSON,
@@ -374,7 +374,7 @@ public class TestMapOperators
                 mapType(BIGINT, VARCHAR),
                 asMap(
                         ImmutableList.of(1L, 2L, 3L, 5L, 8L, 13L, 21L, 34L, 55L),
-                        asList("true", "false", "12", "12.3", "puppies", "kittens", "null", "", null)));
+                        asList("true", "false", "12", "1.23E1", "puppies", "kittens", "null", "", null)));
 
         assertFunction("CAST(JSON '{\"k1\": 5, \"k2\": 3.14, \"k3\":[1, 2, 3], \"k4\":\"e\", \"k5\":{\"a\": \"b\"}, \"k6\":null, \"k7\":\"null\", \"k8\":[null]}' AS MAP<VARCHAR, JSON>)",
                 mapType(VARCHAR, JSON),
@@ -387,7 +387,7 @@ public class TestMapOperators
                         .put("k6", "null")
                         .put("k7", "\"null\"")
                         .put("k8", "[null]")
-                        .build());
+                        .buildOrThrow());
 
         // These two tests verifies that partial json cast preserves input order
         // The second test should never happen in real life because valid json in Trino requires natural key ordering.

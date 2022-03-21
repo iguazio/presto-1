@@ -112,11 +112,6 @@ public interface Block
     }
 
     /**
-     * Appends the value at {@code position} to {@code blockBuilder} and close the entry.
-     */
-    void writePositionTo(int position, BlockBuilder blockBuilder);
-
-    /**
      * Is the byte sequences at {@code offset} in the value at {@code position} equal
      * to the byte sequence at {@code otherOffset} in the value at {@code otherPosition}
      * in {@code otherBlock}.
@@ -198,6 +193,16 @@ public interface Block
      * where you mark all positions for the regions first.
      */
     long getPositionsSizeInBytes(boolean[] positions);
+
+    /**
+     * Returns the size of all positions marked true in the positions array.
+     * The 'selectedPositionsCount' variable may be used to skip iterating through
+     * the positions array in case this is a fixed-width block
+     */
+    default long getPositionsSizeInBytes(boolean[] positions, int selectedPositionsCount)
+    {
+        return getPositionsSizeInBytes(positions);
+    }
 
     /**
      * Returns the retained size of this block in memory, including over-allocations.

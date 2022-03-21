@@ -22,16 +22,15 @@ import io.trino.spi.HostAddress;
 import io.trino.spi.Node;
 import io.trino.spi.NodeManager;
 import io.trino.spi.TrinoException;
-import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.ConnectorInsertTableHandle;
 import io.trino.spi.connector.ConnectorMetadata;
-import io.trino.spi.connector.ConnectorNewTableLayout;
 import io.trino.spi.connector.ConnectorOutputMetadata;
 import io.trino.spi.connector.ConnectorOutputTableHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableHandle;
+import io.trino.spi.connector.ConnectorTableLayout;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.ConnectorViewDefinition;
@@ -123,18 +122,6 @@ public class MemoryMetadata
         }
 
         verify(schemas.remove(schemaName));
-    }
-
-    @Override
-    public Optional<TrinoPrincipal> getSchemaOwner(ConnectorSession session, CatalogSchemaName schemaName)
-    {
-        return Optional.empty();
-    }
-
-    @Override
-    public Map<String, Object> getSchemaProperties(ConnectorSession session, CatalogSchemaName schemaName)
-    {
-        return ImmutableMap.of();
     }
 
     @Override
@@ -232,7 +219,7 @@ public class MemoryMetadata
     }
 
     @Override
-    public synchronized MemoryOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorNewTableLayout> layout)
+    public synchronized MemoryOutputTableHandle beginCreateTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, Optional<ConnectorTableLayout> layout)
     {
         checkSchemaExists(tableMetadata.getTable().getSchemaName());
         checkTableNotExists(tableMetadata.getTable());
@@ -267,10 +254,10 @@ public class MemoryMetadata
     private void checkTableNotExists(SchemaTableName tableName)
     {
         if (tableIds.containsKey(tableName)) {
-            throw new TrinoException(ALREADY_EXISTS, format("Table [%s] already exists", tableName.toString()));
+            throw new TrinoException(ALREADY_EXISTS, format("Table [%s] already exists", tableName));
         }
         if (views.containsKey(tableName)) {
-            throw new TrinoException(ALREADY_EXISTS, format("View [%s] already exists", tableName.toString()));
+            throw new TrinoException(ALREADY_EXISTS, format("View [%s] already exists", tableName));
         }
     }
 
@@ -377,12 +364,6 @@ public class MemoryMetadata
         }
 
         tables.put(tableId, new TableInfo(tableId, info.getSchemaName(), info.getTableName(), info.getColumns(), dataFragments));
-    }
-
-    @Override
-    public boolean usesLegacyTableLayouts()
-    {
-        return false;
     }
 
     @Override

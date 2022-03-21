@@ -43,14 +43,12 @@ public class TestKinesisPlugin
 
         String accessKey = "kinesis.accessKey";
         String secretKey = "kinesis.secretKey";
-        // Important: this has to be created before we setup the injector in the factory:
-        assertNotNull(factory.getHandleResolver());
 
         Connector c = factory.create("kinesis.test-connector", ImmutableMap.<String, String>builder()
                 .put("kinesis.hide-internal-columns", "false")
                 .put("kinesis.access-key", TestUtils.noneToBlank(accessKey))
                 .put("kinesis.secret-key", TestUtils.noneToBlank(secretKey))
-                .build(), new TestingConnectorContext());
+                .buildOrThrow(), new TestingConnectorContext());
         assertNotNull(c);
 
         // Verify that the key objects have been created on the connector
@@ -59,7 +57,7 @@ public class TestKinesisPlugin
         ConnectorMetadata md = c.getMetadata(KinesisTransactionHandle.INSTANCE);
         assertNotNull(md);
 
-        ConnectorTransactionHandle handle = c.beginTransaction(READ_COMMITTED, true);
+        ConnectorTransactionHandle handle = c.beginTransaction(READ_COMMITTED, true, true);
         assertTrue(handle instanceof KinesisTransactionHandle);
 
         c.shutdown();

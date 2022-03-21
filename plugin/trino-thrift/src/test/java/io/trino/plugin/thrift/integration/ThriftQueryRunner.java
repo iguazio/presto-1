@@ -28,16 +28,22 @@ import io.airlift.log.Logger;
 import io.airlift.log.Logging;
 import io.trino.Session;
 import io.trino.cost.StatsCalculator;
+import io.trino.execution.FailureInjector.InjectedFailureType;
 import io.trino.metadata.Metadata;
 import io.trino.metadata.QualifiedObjectName;
+import io.trino.metadata.SessionPropertyManager;
 import io.trino.metadata.SqlFunction;
 import io.trino.plugin.thrift.ThriftPlugin;
 import io.trino.plugin.thrift.server.ThriftIndexedTpchService;
 import io.trino.plugin.thrift.server.ThriftTpchService;
+import io.trino.plugin.tpch.TpchPlugin;
 import io.trino.server.testing.TestingTrinoServer;
+import io.trino.spi.ErrorType;
 import io.trino.spi.Plugin;
+import io.trino.spi.type.TypeManager;
 import io.trino.split.PageSourceManager;
 import io.trino.split.SplitManager;
+import io.trino.sql.analyzer.QueryExplainer;
 import io.trino.sql.planner.NodePartitioningManager;
 import io.trino.testing.DistributedQueryRunner;
 import io.trino.testing.MaterializedResult;
@@ -50,6 +56,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 
 import static io.airlift.testing.Closeables.closeAllSuppress;
@@ -135,8 +142,11 @@ public final class ThriftQueryRunner
                 .put("trino.thrift.client.addresses", addresses)
                 .put("trino.thrift.client.connect-timeout", "30s")
                 .put("trino-thrift.lookup-requests-concurrency", "2")
-                .build();
+                .buildOrThrow();
         queryRunner.createCatalog("thrift", "trino-thrift", connectorProperties);
+
+        queryRunner.installPlugin(new TpchPlugin());
+        queryRunner.createCatalog("tpch", "tpch");
 
         return queryRunner;
     }
@@ -208,6 +218,24 @@ public final class ThriftQueryRunner
         public Metadata getMetadata()
         {
             return source.getMetadata();
+        }
+
+        @Override
+        public TypeManager getTypeManager()
+        {
+            return source.getTypeManager();
+        }
+
+        @Override
+        public QueryExplainer getQueryExplainer()
+        {
+            return source.getQueryExplainer();
+        }
+
+        @Override
+        public SessionPropertyManager getSessionPropertyManager()
+        {
+            return source.getSessionPropertyManager();
         }
 
         @Override
@@ -292,6 +320,18 @@ public final class ThriftQueryRunner
         public Lock getExclusiveLock()
         {
             return source.getExclusiveLock();
+        }
+
+        @Override
+        public void injectTaskFailure(
+                String traceToken,
+                int stageId,
+                int partitionId,
+                int attemptId,
+                InjectedFailureType injectionType,
+                Optional<ErrorType> errorType)
+        {
+            source.injectTaskFailure(traceToken, stageId, partitionId, attemptId, injectionType, errorType);
         }
     }
 }

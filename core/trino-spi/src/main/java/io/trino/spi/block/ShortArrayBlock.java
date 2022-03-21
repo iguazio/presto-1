@@ -87,7 +87,13 @@ public class ShortArrayBlock
     @Override
     public long getPositionsSizeInBytes(boolean[] positions)
     {
-        return (Short.BYTES + Byte.BYTES) * (long) countUsedPositions(positions);
+        return getPositionsSizeInBytes(positions, countUsedPositions(positions));
+    }
+
+    @Override
+    public long getPositionsSizeInBytes(boolean[] positions, int selectedPositionsCount)
+    {
+        return (long) (Short.BYTES + Byte.BYTES) * selectedPositionsCount;
     }
 
     @Override
@@ -139,14 +145,6 @@ public class ShortArrayBlock
     {
         checkReadablePosition(position);
         return valueIsNull != null && valueIsNull[position + arrayOffset];
-    }
-
-    @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        checkReadablePosition(position);
-        blockBuilder.writeShort(values[position + arrayOffset]);
-        blockBuilder.closeEntry();
     }
 
     @Override

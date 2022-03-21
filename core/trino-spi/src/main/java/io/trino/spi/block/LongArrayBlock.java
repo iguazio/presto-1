@@ -88,7 +88,13 @@ public class LongArrayBlock
     @Override
     public long getPositionsSizeInBytes(boolean[] positions)
     {
-        return (Long.BYTES + Byte.BYTES) * (long) countUsedPositions(positions);
+        return getPositionsSizeInBytes(positions, countUsedPositions(positions));
+    }
+
+    @Override
+    public long getPositionsSizeInBytes(boolean[] positions, int selectedPositionsCount)
+    {
+        return (long) (Long.BYTES + Byte.BYTES) * selectedPositionsCount;
     }
 
     @Override
@@ -186,14 +192,6 @@ public class LongArrayBlock
     {
         checkReadablePosition(position);
         return valueIsNull != null && valueIsNull[position + arrayOffset];
-    }
-
-    @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        checkReadablePosition(position);
-        blockBuilder.writeLong(values[position + arrayOffset]);
-        blockBuilder.closeEntry();
     }
 
     @Override

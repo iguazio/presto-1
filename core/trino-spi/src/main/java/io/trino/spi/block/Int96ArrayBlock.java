@@ -94,7 +94,13 @@ public class Int96ArrayBlock
     @Override
     public long getPositionsSizeInBytes(boolean[] positions)
     {
-        return (INT96_BYTES + Byte.BYTES) * (long) countUsedPositions(positions);
+        return getPositionsSizeInBytes(positions, countUsedPositions(positions));
+    }
+
+    @Override
+    public long getPositionsSizeInBytes(boolean[] positions, int selectedPositionsCount)
+    {
+        return (long) (INT96_BYTES + Byte.BYTES) * selectedPositionsCount;
     }
 
     @Override
@@ -157,15 +163,6 @@ public class Int96ArrayBlock
     {
         checkReadablePosition(position);
         return valueIsNull != null && valueIsNull[position + positionOffset];
-    }
-
-    @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        checkReadablePosition(position);
-        blockBuilder.writeLong(high[position + positionOffset]);
-        blockBuilder.writeInt(low[position + positionOffset]);
-        blockBuilder.closeEntry();
     }
 
     @Override

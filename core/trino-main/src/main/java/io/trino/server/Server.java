@@ -40,6 +40,8 @@ import io.airlift.tracetoken.TraceTokenModule;
 import io.trino.client.NodeVersion;
 import io.trino.eventlistener.EventListenerManager;
 import io.trino.eventlistener.EventListenerModule;
+import io.trino.exchange.ExchangeManagerModule;
+import io.trino.exchange.ExchangeManagerRegistry;
 import io.trino.execution.resourcegroups.ResourceGroupManager;
 import io.trino.execution.warnings.WarningCollectorModule;
 import io.trino.metadata.Catalog;
@@ -49,6 +51,7 @@ import io.trino.security.AccessControlManager;
 import io.trino.security.AccessControlModule;
 import io.trino.security.GroupProviderManager;
 import io.trino.server.security.CertificateAuthenticatorManager;
+import io.trino.server.security.HeaderAuthenticatorManager;
 import io.trino.server.security.PasswordAuthenticatorManager;
 import io.trino.server.security.ServerSecurityModule;
 import io.trino.version.EmbedVersion;
@@ -103,6 +106,7 @@ public class Server
                 new ServerSecurityModule(),
                 new AccessControlModule(),
                 new EventListenerModule(),
+                new ExchangeManagerModule(),
                 new CoordinatorDiscoveryModule(),
                 new ServerMainModule(trinoVersion),
                 new GracefulShutdownModule(),
@@ -113,7 +117,7 @@ public class Server
         Bootstrap app = new Bootstrap(modules.build());
 
         try {
-            Injector injector = app.strictConfig().initialize();
+            Injector injector = app.initialize();
 
             log.info("Trino version: %s", injector.getInstance(NodeVersion.class).getVersion());
             logLocation(log, "Working directory", Paths.get("."));
@@ -133,11 +137,14 @@ public class Server
                     .ifPresent(PasswordAuthenticatorManager::loadPasswordAuthenticator);
             injector.getInstance(EventListenerManager.class).loadEventListeners();
             injector.getInstance(GroupProviderManager.class).loadConfiguredGroupProvider();
+            injector.getInstance(ExchangeManagerRegistry.class).loadExchangeManager();
             injector.getInstance(CertificateAuthenticatorManager.class).loadCertificateAuthenticator();
+            injector.getInstance(optionalKey(HeaderAuthenticatorManager.class))
+                    .ifPresent(HeaderAuthenticatorManager::loadHeaderAuthenticator);
 
             injector.getInstance(Announcer.class).start();
 
-            injector.getInstance(ServerInfoResource.class).startupComplete();
+            injector.getInstance(StartupStatus.class).startupComplete();
 
             log.info("======== SERVER STARTED ========");
         }
@@ -149,7 +156,7 @@ public class Server
             addMessages(message, "Warnings", ImmutableList.copyOf(e.getWarnings()));
             message.append("\n");
             message.append("==========");
-            log.error(message.toString());
+            log.error("%s", message);
             System.exit(1);
         }
         catch (Throwable e) {

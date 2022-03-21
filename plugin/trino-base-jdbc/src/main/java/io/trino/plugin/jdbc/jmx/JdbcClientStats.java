@@ -32,6 +32,7 @@ public final class JdbcClientStats
     private final JdbcApiStats setColumnComment = new JdbcApiStats();
     private final JdbcApiStats dropColumn = new JdbcApiStats();
     private final JdbcApiStats dropSchema = new JdbcApiStats();
+    private final JdbcApiStats renameSchema = new JdbcApiStats();
     private final JdbcApiStats dropTable = new JdbcApiStats();
     private final JdbcApiStats finishInsertTable = new JdbcApiStats();
     private final JdbcApiStats getColumns = new JdbcApiStats();
@@ -45,6 +46,7 @@ public final class JdbcClientStats
     private final JdbcApiStats getTableStatistics = new JdbcApiStats();
     private final JdbcApiStats renameColumn = new JdbcApiStats();
     private final JdbcApiStats renameTable = new JdbcApiStats();
+    private final JdbcApiStats setTableProperties = new JdbcApiStats();
     private final JdbcApiStats rollbackCreateTable = new JdbcApiStats();
     private final JdbcApiStats schemaExists = new JdbcApiStats();
     private final JdbcApiStats toPrestoType = new JdbcApiStats();
@@ -52,6 +54,8 @@ public final class JdbcClientStats
     private final JdbcApiStats toWriteMapping = new JdbcApiStats();
     private final JdbcApiStats implementAggregation = new JdbcApiStats();
     private final JdbcApiStats getTableScanRedirection = new JdbcApiStats();
+    private final JdbcApiStats delete = new JdbcApiStats();
+    private final JdbcApiStats truncateTable = new JdbcApiStats();
 
     @Managed
     @Nested
@@ -153,6 +157,13 @@ public final class JdbcClientStats
 
     @Managed
     @Nested
+    public JdbcApiStats getRenameSchema()
+    {
+        return renameSchema;
+    }
+
+    @Managed
+    @Nested
     public JdbcApiStats getDropTable()
     {
         return dropTable;
@@ -244,6 +255,13 @@ public final class JdbcClientStats
 
     @Managed
     @Nested
+    public JdbcApiStats getSetTableProperties()
+    {
+        return setTableProperties;
+    }
+
+    @Managed
+    @Nested
     public JdbcApiStats getRollbackCreateTable()
     {
         return rollbackCreateTable;
@@ -289,5 +307,19 @@ public final class JdbcClientStats
     public JdbcApiStats getGetTableScanRedirection()
     {
         return getTableScanRedirection;
+    }
+
+    @Managed
+    @Nested
+    public JdbcApiStats getDelete()
+    {
+        return delete;
+    }
+
+    @Managed
+    @Nested
+    public JdbcApiStats getTruncateTable()
+    {
+        return truncateTable;
     }
 }

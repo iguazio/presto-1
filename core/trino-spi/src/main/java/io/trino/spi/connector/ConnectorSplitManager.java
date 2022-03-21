@@ -13,43 +13,9 @@
  */
 package io.trino.spi.connector;
 
-import io.trino.spi.predicate.TupleDomain;
-
-import java.util.function.Supplier;
-
 public interface ConnectorSplitManager
 {
     @Deprecated
-    default ConnectorSplitSource getSplits(
-            ConnectorTransactionHandle transactionHandle,
-            ConnectorSession session,
-            ConnectorTableLayoutHandle layout,
-            SplitSchedulingStrategy splitSchedulingStrategy)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Deprecated
-    default ConnectorSplitSource getSplits(
-            ConnectorTransactionHandle transaction,
-            ConnectorSession session,
-            ConnectorTableHandle table,
-            SplitSchedulingStrategy splitSchedulingStrategy)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Deprecated
-    default ConnectorSplitSource getSplits(
-            ConnectorTransactionHandle transaction,
-            ConnectorSession session,
-            ConnectorTableHandle table,
-            SplitSchedulingStrategy splitSchedulingStrategy,
-            Supplier<TupleDomain<ColumnHandle>> dynamicFilter)
-    {
-        return getSplits(transaction, session, table, splitSchedulingStrategy);
-    }
-
     default ConnectorSplitSource getSplits(
             ConnectorTransactionHandle transaction,
             ConnectorSession session,
@@ -57,7 +23,18 @@ public interface ConnectorSplitManager
             SplitSchedulingStrategy splitSchedulingStrategy,
             DynamicFilter dynamicFilter)
     {
-        return getSplits(transaction, session, table, splitSchedulingStrategy, dynamicFilter::getCurrentPredicate);
+        throw new UnsupportedOperationException();
+    }
+
+    default ConnectorSplitSource getSplits(
+            ConnectorTransactionHandle transaction,
+            ConnectorSession session,
+            ConnectorTableHandle table,
+            SplitSchedulingStrategy splitSchedulingStrategy,
+            DynamicFilter dynamicFilter,
+            Constraint constraint)
+    {
+        return getSplits(transaction, session, table, splitSchedulingStrategy, dynamicFilter);
     }
 
     enum SplitSchedulingStrategy

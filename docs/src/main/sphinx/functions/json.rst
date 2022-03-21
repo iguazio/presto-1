@@ -5,13 +5,38 @@ JSON functions and operators
 Cast to JSON
 ------------
 
-Casting from ``BOOLEAN``, ``TINYINT``, ``SMALLINT``, ``INTEGER``,
-``BIGINT``, ``REAL``, ``DOUBLE`` or ``VARCHAR`` is supported.
-Casting from ``ARRAY``, ``MAP`` or ``ROW`` is supported when the element type of
-the array is one of the supported types, or when the key type of the map
-is ``VARCHAR`` and value type of the map is one of the supported types,
-or when every field type of the row is one of the supported types.
-Behaviors of the casts are shown with the examples below::
+The following types can be cast to JSON:
+
+* ``BOOLEAN``
+* ``TINYINT``
+* ``SMALLINT``
+* ``INTEGER``
+* ``BIGINT``
+* ``REAL``
+* ``DOUBLE``
+* ``VARCHAR``
+
+Additionally, ``ARRAY``, ``MAP``, and ``ROW`` types can be cast to JSON when
+the following requirements are met:
+
+* ``ARRAY`` types can be cast when the element type of the array is one
+  of the supported types.
+* ``MAP`` types can be cast when the key type of the map is ``VARCHAR`` and
+  the value type of the map is a supported type,
+* ``ROW`` types can be cast when every field type of the row is a supported
+  type.
+
+.. note::
+
+    Cast operations with supported :ref:`character string types
+    <string-data-types>` treat the input as a string, not validated as JSON.
+    This means that a cast operation with a string-type input of invalid JSON
+    results in a succesful cast to invalid JSON.
+
+    Instead, consider using the :func:`json_parse` function to
+    create validated JSON from a string.
+
+The following examples show the behavior of casting to JSON with these types::
 
     SELECT CAST(NULL AS JSON);
     -- NULL
@@ -98,7 +123,7 @@ Behaviors of the casts are shown with the examples below::
 
     SELECT CAST(JSON '[123,"abc",true]' AS
                 ROW(v1 BIGINT, v2 VARCHAR, v3 BOOLEAN));
-    -- {value1=123, value2=abc, value3=true}
+    -- {v1=123, v2=abc, v3=true}
 
 JSON arrays can have mixed element types and JSON maps can have mixed
 value types. This makes it impossible to cast them to SQL arrays and maps in
@@ -128,7 +153,7 @@ JSON functions
 
     Determine if ``value`` exists in ``json`` (a string containing a JSON array)::
 
-        SELECT json_array_contains('[1, 2, 3]', 2);
+        SELECT json_array_contains('[1, 2, 3]', 2); -- true
 
 .. function:: json_array_get(json_array, index) -> json
 

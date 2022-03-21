@@ -43,13 +43,11 @@ import static io.airlift.slice.Slices.utf8Slice;
 import static io.trino.plugin.jdbc.TestingJdbcTypeHandle.JDBC_BIGINT;
 import static io.trino.plugin.jdbc.TestingJdbcTypeHandle.JDBC_VARCHAR;
 import static io.trino.spi.StandardErrorCode.NOT_FOUND;
-import static io.trino.spi.StandardErrorCode.PERMISSION_DENIED;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.VarcharType.VARCHAR;
 import static io.trino.spi.type.VarcharType.createVarcharType;
 import static io.trino.testing.TestingConnectorSession.SESSION;
 import static io.trino.testing.assertions.TrinoExceptionAssert.assertTrinoExceptionThrownBy;
-import static java.lang.String.format;
 import static java.util.Collections.emptyMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,7 +67,7 @@ public class TestDefaultJdbcMetadata
             throws Exception
     {
         database = new TestingDatabase();
-        metadata = new DefaultJdbcMetadata(new GroupingSetsEnabledJdbcClient(database.getJdbcClient()), false);
+        metadata = new DefaultJdbcMetadata(new GroupingSetsEnabledJdbcClient(database.getJdbcClient()));
         tableHandle = metadata.getTableHandle(SESSION, new SchemaTableName("example", "numbers"));
     }
 
@@ -114,7 +112,7 @@ public class TestDefaultJdbcMetadata
     {
         assertThatThrownBy(() -> metadata.getColumnHandles(SESSION, tableHandle))
                 .isInstanceOf(TableNotFoundException.class)
-                .hasMessage(format("Table '%s' has no supported columns (all 0 columns are not supported)", tableHandle.getSchemaTableName()));
+                .hasMessage("Table '%s' has no supported columns (all 0 columns are not supported)", tableHandle.getSchemaTableName());
     }
 
     @Test
@@ -146,7 +144,7 @@ public class TestDefaultJdbcMetadata
     {
         assertThatThrownBy(() -> metadata.getTableMetadata(SESSION, tableHandle))
                 .isInstanceOf(TableNotFoundException.class)
-                .hasMessage(format("Table '%s' has no supported columns (all 0 columns are not supported)", tableHandle.getSchemaTableName()));
+                .hasMessage("Table '%s' has no supported columns (all 0 columns are not supported)", tableHandle.getSchemaTableName());
     }
 
     @Test
@@ -225,16 +223,10 @@ public class TestDefaultJdbcMetadata
     @Test
     public void testDropTableTable()
     {
-        assertTrinoExceptionThrownBy(() -> metadata.dropTable(SESSION, tableHandle))
-                .hasErrorCode(PERMISSION_DENIED)
-                .hasMessage("DROP TABLE is disabled in this catalog");
-
-        metadata = new DefaultJdbcMetadata(database.getJdbcClient(), true);
         metadata.dropTable(SESSION, tableHandle);
 
         assertTrinoExceptionThrownBy(() -> metadata.getTableMetadata(SESSION, tableHandle))
-                .hasErrorCode(NOT_FOUND)
-                .hasMessageMatching("Table '.*' has no supported columns \\(all \\d+ columns are not supported\\)");
+                .hasErrorCode(NOT_FOUND);
     }
 
     @Test
@@ -403,7 +395,7 @@ public class TestDefaultJdbcMetadata
         }
 
         @Override
-        public boolean supportsAggregationPushdown(ConnectorSession session, JdbcTableHandle table, List<List<ColumnHandle>> groupingSets)
+        public boolean supportsAggregationPushdown(ConnectorSession session, JdbcTableHandle table, List<AggregateFunction> aggregates, Map<String, ColumnHandle> assignments, List<List<ColumnHandle>> groupingSets)
         {
             // disable aggregation pushdown for any table named no_agg_pushdown
             return !"no_aggregation_pushdown".equalsIgnoreCase(table.getRequiredNamedRelation().getRemoteTableName().getTableName());

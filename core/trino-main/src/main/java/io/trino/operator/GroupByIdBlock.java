@@ -136,12 +136,6 @@ public class GroupByIdBlock
     }
 
     @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        block.writePositionTo(position, blockBuilder);
-    }
-
-    @Override
     public boolean equals(int position, int offset, Block otherBlock, int otherPosition, int otherOffset, int length)
     {
         return block.equals(position, offset, otherBlock, otherPosition, otherOffset, length);
@@ -163,6 +157,12 @@ public class GroupByIdBlock
     public Block getSingleValueBlock(int position)
     {
         return block.getSingleValueBlock(position);
+    }
+
+    @Override
+    public boolean mayHaveNull()
+    {
+        return block.mayHaveNull();
     }
 
     @Override

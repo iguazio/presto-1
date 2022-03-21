@@ -13,7 +13,6 @@
  */
 package io.trino.plugin.sqlserver;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.log.Logger;
 import io.airlift.log.Logging;
@@ -58,7 +57,6 @@ public final class SqlServerQueryRunner
             connectorProperties.putIfAbsent("connection-url", testingSqlServer.getJdbcUrl());
             connectorProperties.putIfAbsent("connection-user", testingSqlServer.getUsername());
             connectorProperties.putIfAbsent("connection-password", testingSqlServer.getPassword());
-            connectorProperties.putIfAbsent("allow-drop-table", "true");
 
             queryRunner.installPlugin(new SqlServerPlugin());
             queryRunner.createCatalog(CATALOG, "sqlserver", connectorProperties);
@@ -96,7 +94,7 @@ public final class SqlServerQueryRunner
                 testingSqlServer,
                 ImmutableMap.of("http-server.http.port", "8080"),
                 ImmutableMap.of(),
-                ImmutableList.of());
+                TpchTable.getTables());
 
         Logger log = Logger.get(SqlServerQueryRunner.class);
         log.info("======== SERVER STARTED ========");

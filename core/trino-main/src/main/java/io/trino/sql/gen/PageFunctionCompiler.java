@@ -16,7 +16,6 @@ package io.trino.sql.gen;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -42,6 +41,7 @@ import io.trino.operator.project.PageFieldsToInputParametersRewriter;
 import io.trino.operator.project.PageFilter;
 import io.trino.operator.project.PageProjection;
 import io.trino.operator.project.SelectedPositions;
+import io.trino.plugin.base.cache.NonEvictableLoadingCache;
 import io.trino.spi.Page;
 import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
@@ -50,7 +50,6 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.sql.gen.LambdaBytecodeGenerator.CompiledLambda;
 import io.trino.sql.planner.CompilerConfig;
 import io.trino.sql.relational.ConstantExpression;
-import io.trino.sql.relational.DeterminismEvaluator;
 import io.trino.sql.relational.Expressions;
 import io.trino.sql.relational.InputReferenceExpression;
 import io.trino.sql.relational.LambdaDefinitionExpression;
@@ -89,10 +88,12 @@ import static io.airlift.bytecode.expression.BytecodeExpressions.lessThan;
 import static io.airlift.bytecode.expression.BytecodeExpressions.newArray;
 import static io.airlift.bytecode.expression.BytecodeExpressions.not;
 import static io.trino.operator.project.PageFieldsToInputParametersRewriter.rewritePageFieldsToInputParameters;
+import static io.trino.plugin.base.cache.SafeCaches.buildNonEvictableCache;
 import static io.trino.spi.StandardErrorCode.COMPILER_ERROR;
 import static io.trino.sql.gen.BytecodeUtils.generateWrite;
 import static io.trino.sql.gen.BytecodeUtils.invoke;
 import static io.trino.sql.gen.LambdaExpressionExtractor.extractLambdaExpressions;
+import static io.trino.sql.relational.DeterminismEvaluator.isDeterministic;
 import static io.trino.util.CompilerUtils.defineClass;
 import static io.trino.util.CompilerUtils.makeClassName;
 import static io.trino.util.Reflection.constructorMethodHandle;
@@ -101,10 +102,9 @@ import static java.util.Objects.requireNonNull;
 public class PageFunctionCompiler
 {
     private final Metadata metadata;
-    private final DeterminismEvaluator determinismEvaluator;
 
-    private final LoadingCache<RowExpression, Supplier<PageProjection>> projectionCache;
-    private final LoadingCache<RowExpression, Supplier<PageFilter>> filterCache;
+    private final NonEvictableLoadingCache<RowExpression, Supplier<PageProjection>> projectionCache;
+    private final NonEvictableLoadingCache<RowExpression, Supplier<PageFilter>> filterCache;
 
     private final CacheStatsMBean projectionCacheStats;
     private final CacheStatsMBean filterCacheStats;
@@ -118,13 +118,13 @@ public class PageFunctionCompiler
     public PageFunctionCompiler(Metadata metadata, int expressionCacheSize)
     {
         this.metadata = requireNonNull(metadata, "metadata is null");
-        this.determinismEvaluator = new DeterminismEvaluator(metadata);
 
         if (expressionCacheSize > 0) {
-            projectionCache = CacheBuilder.newBuilder()
-                    .recordStats()
-                    .maximumSize(expressionCacheSize)
-                    .build(CacheLoader.from(projection -> compileProjectionInternal(projection, Optional.empty())));
+            projectionCache = buildNonEvictableCache(
+                    CacheBuilder.newBuilder()
+                            .recordStats()
+                            .maximumSize(expressionCacheSize),
+                    CacheLoader.from(projection -> compileProjectionInternal(projection, Optional.empty())));
             projectionCacheStats = new CacheStatsMBean(projectionCache);
         }
         else {
@@ -133,10 +133,11 @@ public class PageFunctionCompiler
         }
 
         if (expressionCacheSize > 0) {
-            filterCache = CacheBuilder.newBuilder()
-                    .recordStats()
-                    .maximumSize(expressionCacheSize)
-                    .build(CacheLoader.from(filter -> compileFilterInternal(filter, Optional.empty())));
+            filterCache = buildNonEvictableCache(
+                    CacheBuilder.newBuilder()
+                            .recordStats()
+                            .maximumSize(expressionCacheSize),
+                    CacheLoader.from(filter -> compileFilterInternal(filter, Optional.empty())));
             filterCacheStats = new CacheStatsMBean(filterCache);
         }
         else {
@@ -206,7 +207,7 @@ public class PageFunctionCompiler
 
         return () -> new GeneratedPageProjection(
                 result.getRewrittenExpression(),
-                determinismEvaluator.isDeterministic(result.getRewrittenExpression()),
+                isDeterministic(result.getRewrittenExpression()),
                 result.getInputChannels(),
                 constructorMethodHandle(pageProjectionWorkClass, BlockBuilder.class, ConnectorSession.class, Page.class, SelectedPositions.class));
     }
@@ -341,7 +342,7 @@ public class PageFunctionCompiler
                         .add(position)
                         .build());
 
-        method.comment("Projection: %s", projection.toString());
+        method.comment("Projection: %s", projection);
 
         Scope scope = method.getScope();
         BytecodeBlock body = method.getBody();
@@ -427,7 +428,7 @@ public class PageFunctionCompiler
         // isDeterministic
         classDefinition.declareMethod(a(PUBLIC), "isDeterministic", type(boolean.class))
                 .getBody()
-                .append(constantBoolean(determinismEvaluator.isDeterministic(filter)))
+                .append(constantBoolean(isDeterministic(filter)))
                 .retBoolean();
 
         // getInputChannels
@@ -520,7 +521,7 @@ public class PageFunctionCompiler
                         .add(position)
                         .build());
 
-        method.comment("Filter: %s", filter.toString());
+        method.comment("Filter: %s", filter);
 
         Scope scope = method.getScope();
         BytecodeBlock body = method.getBody();
@@ -558,7 +559,7 @@ public class PageFunctionCompiler
                     lambdaExpression,
                     "lambda_" + counter,
                     containerClassDefinition,
-                    compiledLambdaMap.build(),
+                    compiledLambdaMap.buildOrThrow(),
                     callSiteBinder,
                     cachedInstanceBinder,
                     metadata);
@@ -566,7 +567,7 @@ public class PageFunctionCompiler
             counter++;
         }
 
-        return compiledLambdaMap.build();
+        return compiledLambdaMap.buildOrThrow();
     }
 
     private static void generateConstructor(

@@ -158,7 +158,7 @@ public class OrcFileWriterFactory
         }
 
         try {
-            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getUser(), path, configuration);
+            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getIdentity(), path, configuration);
             OrcDataSink orcDataSink = createOrcDataSink(fileSystem, path);
 
             Optional<Supplier<OrcDataSource>> validationInputFactory = Optional.empty();
@@ -214,7 +214,7 @@ public class OrcFileWriterFactory
                     ImmutableMap.<String, String>builder()
                             .put(PRESTO_VERSION_NAME, nodeVersion.toString())
                             .put(PRESTO_QUERY_ID_NAME, session.getQueryId())
-                            .build(),
+                            .buildOrThrow(),
                     validationInputFactory,
                     getOrcOptimizedWriterValidateMode(session),
                     stats));
@@ -227,7 +227,7 @@ public class OrcFileWriterFactory
     public static OrcDataSink createOrcDataSink(FileSystem fileSystem, Path path)
             throws IOException
     {
-        return new OutputStreamOrcDataSink(fileSystem.create(path));
+        return new OutputStreamOrcDataSink(fileSystem.create(path, false));
     }
 
     private static CompressionKind getCompression(Properties schema, JobConf configuration)

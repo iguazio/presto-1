@@ -208,7 +208,7 @@ public class CursorProcessorCompiler
                     lambdaExpression,
                     methodName,
                     containerClassDefinition,
-                    compiledLambdaMap.build(),
+                    compiledLambdaMap.buildOrThrow(),
                     callSiteBinder,
                     cachedInstanceBinder,
                     metadata);
@@ -216,7 +216,7 @@ public class CursorProcessorCompiler
             counter++;
         }
 
-        return compiledLambdaMap.build();
+        return compiledLambdaMap.buildOrThrow();
     }
 
     private void generateFilterMethod(
@@ -270,7 +270,7 @@ public class CursorProcessorCompiler
         Parameter output = arg("output", BlockBuilder.class);
         MethodDefinition method = classDefinition.declareMethod(a(PUBLIC), methodName, type(void.class), session, cursor, output);
 
-        method.comment("Projection: %s", projection.toString());
+        method.comment("Projection: %s", projection);
 
         Scope scope = method.getScope();
         Variable wasNullVariable = scope.declareVariable(type(boolean.class), "wasNull");

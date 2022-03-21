@@ -19,7 +19,6 @@ import io.airlift.json.JsonModule;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 import io.trino.spi.type.TypeManager;
 
 import java.util.Map;
@@ -46,12 +45,6 @@ public class MongoConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new MongoHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> config, ConnectorContext context)
     {
         requireNonNull(config, "config is null");
@@ -61,7 +54,7 @@ public class MongoConnectorFactory
                 new MongoClientModule(),
                 binder -> binder.bind(TypeManager.class).toInstance(context.getTypeManager()));
 
-        Injector injector = app.strictConfig().doNotInitializeLogging()
+        Injector injector = app.doNotInitializeLogging()
                 .setRequiredConfigurationProperties(config)
                 .initialize();
 

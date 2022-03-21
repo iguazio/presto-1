@@ -27,16 +27,24 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.MetastoreConfig;
 import io.trino.plugin.hive.metastore.file.FileHiveMetastore;
 import io.trino.plugin.hive.metastore.file.FileHiveMetastoreConfig;
+import io.trino.plugin.iceberg.catalog.IcebergTableOperationsProvider;
+import io.trino.plugin.iceberg.catalog.file.FileMetastoreTableOperationsProvider;
 import io.trino.plugin.tpch.TpchPlugin;
+import io.trino.spi.connector.SchemaTableName;
 import io.trino.testing.AbstractTestQueryFramework;
 import io.trino.testing.DistributedQueryRunner;
 import io.trino.testing.MaterializedResult;
 import io.trino.testing.MaterializedRow;
 import io.trino.testing.QueryRunner;
+import io.trino.testing.TestingConnectorSession;
+import org.apache.iceberg.FileContent;
+import org.apache.iceberg.Table;
 import org.testng.annotations.Test;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static io.trino.SystemSessionProperties.MAX_DRIVERS_PER_TASK;
 import static io.trino.SystemSessionProperties.TASK_CONCURRENCY;
@@ -49,6 +57,10 @@ import static org.testng.Assert.assertNull;
 public class TestIcebergOrcMetricsCollection
         extends AbstractTestQueryFramework
 {
+    private HiveMetastore metastore;
+    private HdfsEnvironment hdfsEnvironment;
+    private IcebergTableOperationsProvider tableOperationsProvider;
+
     @Override
     protected QueryRunner createQueryRunner()
             throws Exception
@@ -69,17 +81,18 @@ public class TestIcebergOrcMetricsCollection
 
         HdfsConfig hdfsConfig = new HdfsConfig();
         HdfsConfiguration hdfsConfiguration = new HiveHdfsConfiguration(new HdfsConfigurationInitializer(hdfsConfig), ImmutableSet.of());
-        HdfsEnvironment hdfsEnvironment = new HdfsEnvironment(hdfsConfiguration, hdfsConfig, new NoHdfsAuthentication());
+        hdfsEnvironment = new HdfsEnvironment(hdfsConfiguration, hdfsConfig, new NoHdfsAuthentication());
 
-        HiveMetastore metastore = new FileHiveMetastore(
+        metastore = new FileHiveMetastore(
                 new NodeVersion("test_version"),
                 hdfsEnvironment,
                 new MetastoreConfig(),
                 new FileHiveMetastoreConfig()
                         .setCatalogDirectory(baseDir.toURI().toString())
                         .setMetastoreUser("test"));
+        tableOperationsProvider = new FileMetastoreTableOperationsProvider(new HdfsFileIoProvider(hdfsEnvironment));
 
-        queryRunner.installPlugin(new TestingIcebergPlugin(metastore, false));
+        queryRunner.installPlugin(new TestingIcebergPlugin(Optional.of(metastore), Optional.empty()));
         queryRunner.createCatalog("iceberg", "iceberg");
 
         queryRunner.installPlugin(new TpchPlugin());
@@ -91,12 +104,124 @@ public class TestIcebergOrcMetricsCollection
     }
 
     @Test
+    public void testMetrics()
+    {
+        assertUpdate("create table no_metrics (c1 varchar, c2 varchar)");
+        Table table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "no_metrics"));
+        // skip metrics for all columns
+        table.updateProperties().set("write.metadata.metrics.default", "none").commit();
+        // add one row
+        assertUpdate("insert into no_metrics values ('abcd', 'a')", 1);
+        List<MaterializedRow> materializedRows = computeActual("select * from \"no_metrics$files\"").getMaterializedRows();
+        DataFileRecord datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertNull(datafile.getValueCounts());
+        assertNull(datafile.getNullValueCounts());
+        assertNull(datafile.getUpperBounds());
+        assertNull(datafile.getLowerBounds());
+        assertNull(datafile.getColumnSizes());
+
+        // keep c1 metrics
+        assertUpdate("create table c1_metrics (c1 varchar, c2 varchar)");
+        table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "c1_metrics"));
+        table.updateProperties()
+                .set("write.metadata.metrics.default", "none")
+                .set("write.metadata.metrics.column.c1", "full")
+                .commit();
+
+        assertUpdate("insert into c1_metrics values ('b', 'a')", 1);
+        materializedRows = computeActual("select * from \"c1_metrics$files\"").getMaterializedRows();
+        datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertEquals(datafile.getValueCounts().size(), 1);
+        assertEquals(datafile.getNullValueCounts().size(), 1);
+        assertEquals(datafile.getUpperBounds().size(), 1);
+        assertEquals(datafile.getLowerBounds().size(), 1);
+
+        // set c1 metrics mode to count
+        assertUpdate("create table c1_metrics_count (c1 varchar, c2 varchar)");
+        table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "c1_metrics_count"));
+        table.updateProperties()
+                .set("write.metadata.metrics.default", "none")
+                .set("write.metadata.metrics.column.c1", "counts")
+                .commit();
+
+        assertUpdate("insert into c1_metrics_count values ('b', 'a')", 1);
+        materializedRows = computeActual("select * from \"c1_metrics_count$files\"").getMaterializedRows();
+        datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertEquals(datafile.getValueCounts().size(), 1);
+        assertEquals(datafile.getNullValueCounts().size(), 1);
+        assertNull(datafile.getUpperBounds());
+        assertNull(datafile.getLowerBounds());
+
+        // set c1 metrics mode to truncate(10)
+        assertUpdate("create table c1_metrics_truncate (c1 varchar, c2 varchar)");
+        table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "c1_metrics_truncate"));
+        table.updateProperties()
+                .set("write.metadata.metrics.default", "none")
+                .set("write.metadata.metrics.column.c1", "truncate(10)")
+                .commit();
+
+        assertUpdate("insert into c1_metrics_truncate values ('abcaabcaabcaabca', 'a')", 1);
+        materializedRows = computeActual("select * from \"c1_metrics_truncate$files\"").getMaterializedRows();
+        datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertEquals(datafile.getValueCounts().size(), 1);
+        assertEquals(datafile.getNullValueCounts().size(), 1);
+        datafile.getUpperBounds().forEach((k, v) -> {
+            assertEquals(v.length(), 10); });
+        datafile.getLowerBounds().forEach((k, v) -> {
+            assertEquals(v.length(), 10); });
+
+        // keep both c1 and c2 metrics
+        assertUpdate("create table c_metrics (c1 varchar, c2 varchar)");
+        table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "c_metrics"));
+        table.updateProperties()
+                .set("write.metadata.metrics.column.c1", "full")
+                .set("write.metadata.metrics.column.c2", "full")
+                .commit();
+        assertUpdate("insert into c_metrics values ('b', 'a')", 1);
+        materializedRows = computeActual("select * from \"c_metrics$files\"").getMaterializedRows();
+        datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertEquals(datafile.getValueCounts().size(), 2);
+        assertEquals(datafile.getNullValueCounts().size(), 2);
+        assertEquals(datafile.getUpperBounds().size(), 2);
+        assertEquals(datafile.getLowerBounds().size(), 2);
+
+        // keep all metrics
+        assertUpdate("create table metrics (c1 varchar, c2 varchar)");
+        table = IcebergUtil.loadIcebergTable(metastore, tableOperationsProvider, TestingConnectorSession.SESSION,
+                new SchemaTableName("test_schema", "metrics"));
+        table.updateProperties()
+                .set("write.metadata.metrics.default", "full")
+                .commit();
+        assertUpdate("insert into metrics values ('b', 'a')", 1);
+        materializedRows = computeActual("select * from \"metrics$files\"").getMaterializedRows();
+        datafile = toDataFileRecord(materializedRows.get(0));
+        assertEquals(datafile.getRecordCount(), 1);
+        assertEquals(datafile.getValueCounts().size(), 2);
+        assertEquals(datafile.getNullValueCounts().size(), 2);
+        assertEquals(datafile.getUpperBounds().size(), 2);
+        assertEquals(datafile.getLowerBounds().size(), 2);
+    }
+
+    @Test
     public void testBasic()
     {
         assertUpdate("CREATE TABLE orders WITH (format = 'ORC') AS SELECT * FROM tpch.tiny.orders", 15000);
         MaterializedResult materializedResult = computeActual("SELECT * FROM \"orders$files\"");
         assertEquals(materializedResult.getRowCount(), 1);
         DataFileRecord datafile = toDataFileRecord(materializedResult.getMaterializedRows().get(0));
+
+        // check content
+        assertEquals(datafile.getContent(), FileContent.DATA.id());
 
         // Check file format
         assertEquals(datafile.getFileFormat(), "ORC");
@@ -110,29 +235,33 @@ public class TestIcebergOrcMetricsCollection
         // Check per-column null value count
         datafile.getNullValueCounts().values().forEach(nullValueCount -> assertEquals(nullValueCount, (Long) 0L));
 
+        // Check NaN value count
+        // TODO: add more checks after NaN info is collected
+        assertNull(datafile.getNanValueCounts());
+
         // Check per-column lower bound
         Map<Integer, String> lowerBounds = datafile.getLowerBounds();
-        assertQuery("SELECT min(orderkey) FROM tpch.tiny.orders", "VALUES " + lowerBounds.get(1));
-        assertQuery("SELECT min(custkey) FROM tpch.tiny.orders", "VALUES " + lowerBounds.get(2));
-        assertQuery("SELECT min(orderstatus) FROM tpch.tiny.orders", "VALUES '" + lowerBounds.get(3) + "'");
-        assertQuery("SELECT min(totalprice) FROM tpch.tiny.orders", "VALUES " + lowerBounds.get(4));
-        assertQuery("SELECT min(orderdate) FROM tpch.tiny.orders", "VALUES DATE '" + lowerBounds.get(5) + "'");
-        assertQuery("SELECT min(orderpriority) FROM tpch.tiny.orders", "VALUES '" + lowerBounds.get(6) + "'");
-        assertQuery("SELECT min(clerk) FROM tpch.tiny.orders", "VALUES '" + lowerBounds.get(7) + "'");
-        assertQuery("SELECT min(shippriority) FROM tpch.tiny.orders", "VALUES " + lowerBounds.get(8));
-        assertQuery("SELECT min(comment) FROM tpch.tiny.orders", "VALUES '" + lowerBounds.get(9) + "'");
+        assertEquals(lowerBounds.get(1), "1");
+        assertEquals(lowerBounds.get(2), "1");
+        assertEquals(lowerBounds.get(3), "F");
+        assertEquals(lowerBounds.get(4), "874.89");
+        assertEquals(lowerBounds.get(5), "1992-01-01");
+        assertEquals(lowerBounds.get(6), "1-URGENT");
+        assertEquals(lowerBounds.get(7), "Clerk#000000001");
+        assertEquals(lowerBounds.get(8), "0");
+        assertEquals(lowerBounds.get(9), " about the accou");
 
         // Check per-column upper bound
         Map<Integer, String> upperBounds = datafile.getUpperBounds();
-        assertQuery("SELECT max(orderkey) FROM tpch.tiny.orders", "VALUES " + upperBounds.get(1));
-        assertQuery("SELECT max(custkey) FROM tpch.tiny.orders", "VALUES " + upperBounds.get(2));
-        assertQuery("SELECT max(orderstatus) FROM tpch.tiny.orders", "VALUES '" + upperBounds.get(3) + "'");
-        assertQuery("SELECT max(totalprice) FROM tpch.tiny.orders", "VALUES " + upperBounds.get(4));
-        assertQuery("SELECT max(orderdate) FROM tpch.tiny.orders", "VALUES DATE '" + upperBounds.get(5) + "'");
-        assertQuery("SELECT max(orderpriority) FROM tpch.tiny.orders", "VALUES '" + upperBounds.get(6) + "'");
-        assertQuery("SELECT max(clerk) FROM tpch.tiny.orders", "VALUES '" + upperBounds.get(7) + "'");
-        assertQuery("SELECT max(shippriority) FROM tpch.tiny.orders", "VALUES " + upperBounds.get(8));
-        assertQuery("SELECT max(comment) FROM tpch.tiny.orders", "VALUES '" + upperBounds.get(9) + "'");
+        assertEquals(upperBounds.get(1), "60000");
+        assertEquals(upperBounds.get(2), "1499");
+        assertEquals(upperBounds.get(3), "P");
+        assertEquals(upperBounds.get(4), "466001.28");
+        assertEquals(upperBounds.get(5), "1998-08-02");
+        assertEquals(upperBounds.get(6), "5-LOW");
+        assertEquals(upperBounds.get(7), "Clerk#000001000");
+        assertEquals(upperBounds.get(8), "0");
+        assertEquals(upperBounds.get(9), "zzle. carefully!");
 
         assertUpdate("DROP TABLE orders");
     }
@@ -140,8 +269,12 @@ public class TestIcebergOrcMetricsCollection
     @Test
     public void testWithNulls()
     {
-        assertUpdate("CREATE TABLE test_with_nulls (_integer INTEGER, _real REAL, _string VARCHAR)");
-        assertUpdate("INSERT INTO test_with_nulls VALUES (7, 3.4, 'aaa'), (3, 4.5, 'bbb'), (4, null, 'ccc'), (null, null, 'ddd')", 4);
+        assertUpdate("CREATE TABLE test_with_nulls (_integer INTEGER, _real REAL, _string VARCHAR, _timestamp TIMESTAMP(6))");
+        assertUpdate("INSERT INTO test_with_nulls VALUES " +
+                "(7, 3.4, 'aaa', TIMESTAMP '2020-01-01 00:00:00.123456')," +
+                "(3, 4.5, 'bbb', TIMESTAMP '2021-02-01 00:23:10.398102')," +
+                "(4, null, 'ccc', null)," +
+                "(null, null, 'ddd', null)", 4);
         MaterializedResult materializedResult = computeActual("SELECT * FROM \"test_with_nulls$files\"");
         assertEquals(materializedResult.getRowCount(), 1);
         DataFileRecord datafile = toDataFileRecord(materializedResult.getMaterializedRows().get(0));
@@ -153,11 +286,13 @@ public class TestIcebergOrcMetricsCollection
         assertEquals(datafile.getNullValueCounts().get(1), (Long) 1L);
         assertEquals(datafile.getNullValueCounts().get(2), (Long) 2L);
         assertEquals(datafile.getNullValueCounts().get(3), (Long) 0L);
+        assertEquals(datafile.getNullValueCounts().get(4), (Long) 2L);
 
         // Check per-column lower bound
         assertEquals(datafile.getLowerBounds().get(1), "3");
         assertEquals(datafile.getLowerBounds().get(2), "3.4");
         assertEquals(datafile.getLowerBounds().get(3), "aaa");
+        assertEquals(datafile.getLowerBounds().get(4), "2020-01-01T00:00:00.123");
 
         assertUpdate("DROP TABLE test_with_nulls");
 
@@ -178,6 +313,28 @@ public class TestIcebergOrcMetricsCollection
         assertNull(datafile.getUpperBounds());
 
         assertUpdate("DROP TABLE test_all_nulls");
+    }
+
+    @Test
+    public void testWithNaNs()
+    {
+        assertUpdate("CREATE TABLE test_with_nans (_int INTEGER, _real REAL, _double DOUBLE)");
+        assertUpdate("INSERT INTO test_with_nans VALUES (1, 1.1, 1.1), (2, nan(), 4.5), (3, 4.6, -nan())", 3);
+        MaterializedResult materializedResult = computeActual("SELECT * FROM \"test_with_nans$files\"");
+        assertEquals(materializedResult.getRowCount(), 1);
+        DataFileRecord datafile = toDataFileRecord(materializedResult.getMaterializedRows().get(0));
+
+        // Check per-column value count
+        datafile.getValueCounts().values().forEach(valueCount -> assertEquals(valueCount, (Long) 3L));
+
+        // TODO: add more checks after NaN info is collected
+        assertNull(datafile.getNanValueCounts());
+        assertNull(datafile.getLowerBounds().get(2));
+        assertNull(datafile.getLowerBounds().get(3));
+        assertNull(datafile.getUpperBounds().get(2));
+        assertNull(datafile.getUpperBounds().get(3));
+
+        assertUpdate("DROP TABLE test_with_nans");
     }
 
     @Test
@@ -218,8 +375,44 @@ public class TestIcebergOrcMetricsCollection
         assertUpdate("DROP TABLE test_nested_types");
     }
 
+    @Test
+    public void testWithTimestamps()
+    {
+        assertUpdate("CREATE TABLE test_timestamp (_timestamp TIMESTAMP(6)) WITH (format = 'ORC')");
+        assertUpdate("INSERT INTO test_timestamp VALUES" +
+                "(TIMESTAMP '2021-01-01 00:00:00.111111'), " +
+                "(TIMESTAMP '2021-01-01 00:00:00.222222'), " +
+                "(TIMESTAMP '2021-01-31 00:00:00.333333')", 3);
+        MaterializedResult materializedResult = computeActual("SELECT * FROM \"test_timestamp$files\"");
+        assertEquals(materializedResult.getRowCount(), 1);
+        DataFileRecord datafile = toDataFileRecord(materializedResult.getMaterializedRows().get(0));
+
+        // Check file format
+        assertEquals(datafile.getFileFormat(), "ORC");
+
+        // Check file row count
+        assertEquals(datafile.getRecordCount(), 3L);
+
+        // Check per-column value count
+        datafile.getValueCounts().values().forEach(valueCount -> assertEquals(valueCount, (Long) 3L));
+
+        // Check per-column null value count
+        datafile.getNullValueCounts().values().forEach(nullValueCount -> assertEquals(nullValueCount, (Long) 0L));
+
+        // Check column lower bound. Min timestamp doesn't rely on file-level statistics and will not be truncated to milliseconds.
+        assertEquals(datafile.getLowerBounds().get(1), "2021-01-01T00:00:00.111");
+        assertQuery("SELECT min(_timestamp) FROM test_timestamp", "VALUES '2021-01-01 00:00:00.111111'");
+
+        // Check column upper bound. Max timestamp doesn't rely on file-level statistics and will not be truncated to milliseconds.
+        assertEquals(datafile.getUpperBounds().get(1), "2021-01-31T00:00:00.333999");
+        assertQuery("SELECT max(_timestamp) FROM test_timestamp", "VALUES '2021-01-31 00:00:00.333333'");
+
+        assertUpdate("DROP TABLE test_timestamp");
+    }
+
     public static class DataFileRecord
     {
+        private final int content;
         private final String filePath;
         private final String fileFormat;
         private final long recordCount;
@@ -227,25 +420,29 @@ public class TestIcebergOrcMetricsCollection
         private final Map<Integer, Long> columnSizes;
         private final Map<Integer, Long> valueCounts;
         private final Map<Integer, Long> nullValueCounts;
+        private final Map<Integer, Long> nanValueCounts;
         private final Map<Integer, String> lowerBounds;
         private final Map<Integer, String> upperBounds;
 
         public static DataFileRecord toDataFileRecord(MaterializedRow row)
         {
-            assertEquals(row.getFieldCount(), 11);
+            assertEquals(row.getFieldCount(), 14);
             return new DataFileRecord(
-                    (String) row.getField(0),
+                    (int) row.getField(0),
                     (String) row.getField(1),
-                    (long) row.getField(2),
+                    (String) row.getField(2),
                     (long) row.getField(3),
-                    row.getField(4) != null ? ImmutableMap.copyOf((Map<Integer, Long>) row.getField(4)) : null,
+                    (long) row.getField(4),
                     row.getField(5) != null ? ImmutableMap.copyOf((Map<Integer, Long>) row.getField(5)) : null,
                     row.getField(6) != null ? ImmutableMap.copyOf((Map<Integer, Long>) row.getField(6)) : null,
-                    row.getField(7) != null ? ImmutableMap.copyOf((Map<Integer, String>) row.getField(7)) : null,
-                    row.getField(8) != null ? ImmutableMap.copyOf((Map<Integer, String>) row.getField(8)) : null);
+                    row.getField(7) != null ? ImmutableMap.copyOf((Map<Integer, Long>) row.getField(7)) : null,
+                    row.getField(8) != null ? ImmutableMap.copyOf((Map<Integer, Long>) row.getField(8)) : null,
+                    row.getField(9) != null ? ImmutableMap.copyOf((Map<Integer, String>) row.getField(9)) : null,
+                    row.getField(10) != null ? ImmutableMap.copyOf((Map<Integer, String>) row.getField(10)) : null);
         }
 
         private DataFileRecord(
+                int content,
                 String filePath,
                 String fileFormat,
                 long recordCount,
@@ -253,9 +450,11 @@ public class TestIcebergOrcMetricsCollection
                 Map<Integer, Long> columnSizes,
                 Map<Integer, Long> valueCounts,
                 Map<Integer, Long> nullValueCounts,
+                Map<Integer, Long> nanValueCounts,
                 Map<Integer, String> lowerBounds,
                 Map<Integer, String> upperBounds)
         {
+            this.content = content;
             this.filePath = filePath;
             this.fileFormat = fileFormat;
             this.recordCount = recordCount;
@@ -263,8 +462,14 @@ public class TestIcebergOrcMetricsCollection
             this.columnSizes = columnSizes;
             this.valueCounts = valueCounts;
             this.nullValueCounts = nullValueCounts;
+            this.nanValueCounts = nanValueCounts;
             this.lowerBounds = lowerBounds;
             this.upperBounds = upperBounds;
+        }
+
+        public int getContent()
+        {
+            return content;
         }
 
         public String getFilePath()
@@ -300,6 +505,11 @@ public class TestIcebergOrcMetricsCollection
         public Map<Integer, Long> getNullValueCounts()
         {
             return nullValueCounts;
+        }
+
+        public Map<Integer, Long> getNanValueCounts()
+        {
+            return nanValueCounts;
         }
 
         public Map<Integer, String> getLowerBounds()

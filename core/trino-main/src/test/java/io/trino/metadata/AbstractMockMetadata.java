@@ -22,21 +22,19 @@ import io.airlift.slice.Slice;
 import io.trino.Session;
 import io.trino.connector.CatalogName;
 import io.trino.metadata.ResolvedFunction.ResolvedFunctionDecoder;
-import io.trino.operator.aggregation.InternalAggregationFunction;
+import io.trino.operator.aggregation.AggregationMetadata;
 import io.trino.operator.window.WindowFunctionSupplier;
 import io.trino.spi.TrinoException;
-import io.trino.spi.block.BlockEncodingSerde;
 import io.trino.spi.connector.AggregateFunction;
 import io.trino.spi.connector.AggregationApplicationResult;
+import io.trino.spi.connector.BeginTableExecuteResult;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.spi.connector.CatalogSchemaTableName;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.ConnectorCapabilities;
-import io.trino.spi.connector.ConnectorMaterializedViewDefinition;
 import io.trino.spi.connector.ConnectorOutputMetadata;
 import io.trino.spi.connector.ConnectorTableMetadata;
-import io.trino.spi.connector.ConnectorViewDefinition;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.ConstraintApplicationResult;
 import io.trino.spi.connector.JoinApplicationResult;
@@ -58,16 +56,14 @@ import io.trino.spi.function.InvocationConvention;
 import io.trino.spi.function.OperatorType;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.security.GrantInfo;
+import io.trino.spi.security.Identity;
 import io.trino.spi.security.Privilege;
 import io.trino.spi.security.RoleGrant;
 import io.trino.spi.security.TrinoPrincipal;
 import io.trino.spi.statistics.ComputedStatistics;
 import io.trino.spi.statistics.TableStatistics;
 import io.trino.spi.statistics.TableStatisticsMetadata;
-import io.trino.spi.type.ParametricType;
 import io.trino.spi.type.Type;
-import io.trino.spi.type.TypeId;
-import io.trino.spi.type.TypeSignature;
 import io.trino.sql.analyzer.TypeSignatureProvider;
 import io.trino.sql.planner.PartitioningHandle;
 import io.trino.sql.tree.QualifiedName;
@@ -84,6 +80,7 @@ import static io.trino.metadata.FunctionKind.SCALAR;
 import static io.trino.metadata.RedirectionAwareTableHandle.noRedirection;
 import static io.trino.spi.StandardErrorCode.FUNCTION_NOT_FOUND;
 import static io.trino.spi.type.DoubleType.DOUBLE;
+import static io.trino.type.InternalTypeManager.TESTING_TYPE_MANAGER;
 
 public abstract class AbstractMockMetadata
         implements Metadata
@@ -93,7 +90,7 @@ public abstract class AbstractMockMetadata
         return new AbstractMockMetadata() {};
     }
 
-    private final ResolvedFunctionDecoder functionDecoder = new ResolvedFunctionDecoder(this::getType);
+    private final ResolvedFunctionDecoder functionDecoder = new ResolvedFunctionDecoder(TESTING_TYPE_MANAGER::getType);
 
     @Override
     public Set<ConnectorCapabilities> getConnectorCapabilities(Session session, CatalogName catalogName)
@@ -132,13 +129,31 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Optional<SystemTable> getSystemTable(Session session, QualifiedObjectName tableName)
+    public Optional<TableExecuteHandle> getTableHandleForExecute(Session session, TableHandle tableHandle, String procedureName, Map<String, Object> executeProperties)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<TableLayoutResult> getLayout(Session session, TableHandle tableHandle, Constraint constraint, Optional<Set<ColumnHandle>> desiredColumns)
+    public Optional<TableLayout> getLayoutForTableExecute(Session session, TableExecuteHandle tableExecuteHandle)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public BeginTableExecuteResult<TableExecuteHandle, TableHandle> beginTableExecute(Session session, TableExecuteHandle tableExecuteHandle, TableHandle updatedSourceTableHandle)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void finishTableExecute(Session session, TableExecuteHandle handle, Collection<Slice> fragments, List<Object> tableExecuteState)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Optional<SystemTable> getSystemTable(Session session, QualifiedObjectName tableName)
     {
         throw new UnsupportedOperationException();
     }
@@ -246,6 +261,12 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
+    public void setTableProperties(Session session, TableHandle tableHandle, Map<String, Optional<Object>> properties)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void setTableComment(Session session, TableHandle tableHandle, Optional<String> comment)
     {
         throw new UnsupportedOperationException();
@@ -288,13 +309,19 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Optional<NewTableLayout> getNewTableLayout(Session session, String catalogName, ConnectorTableMetadata tableMetadata)
+    public void truncateTable(Session session, TableHandle tableHandle)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public OutputTableHandle beginCreateTable(Session session, String catalogName, ConnectorTableMetadata tableMetadata, Optional<NewTableLayout> layout)
+    public Optional<TableLayout> getNewTableLayout(Session session, String catalogName, ConnectorTableMetadata tableMetadata)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public OutputTableHandle beginCreateTable(Session session, String catalogName, ConnectorTableMetadata tableMetadata, Optional<TableLayout> layout)
     {
         throw new UnsupportedOperationException();
     }
@@ -306,7 +333,7 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Optional<NewTableLayout> getInsertLayout(Session session, TableHandle target)
+    public Optional<TableLayout> getInsertLayout(Session session, TableHandle target)
     {
         throw new UnsupportedOperationException();
     }
@@ -402,12 +429,6 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public boolean supportsMetadataDelete(Session session, TableHandle tableHandle)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public Optional<TableHandle> applyDelete(Session session, TableHandle tableHandle)
     {
         throw new UnsupportedOperationException();
@@ -450,7 +471,7 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Map<String, CatalogName> getCatalogNames(Session session)
+    public Map<String, Catalog> getCatalogs(Session session)
     {
         throw new UnsupportedOperationException();
     }
@@ -462,13 +483,13 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Map<QualifiedObjectName, ConnectorViewDefinition> getViews(Session session, QualifiedTablePrefix prefix)
+    public Map<QualifiedObjectName, ViewInfo> getViews(Session session, QualifiedTablePrefix prefix)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<ConnectorViewDefinition> getView(Session session, QualifiedObjectName viewName)
+    public Optional<ViewDefinition> getView(Session session, QualifiedObjectName viewName)
     {
         throw new UnsupportedOperationException();
     }
@@ -486,7 +507,7 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public void createView(Session session, QualifiedObjectName viewName, ConnectorViewDefinition definition, boolean replace)
+    public void createView(Session session, QualifiedObjectName viewName, ViewDefinition definition, boolean replace)
     {
         throw new UnsupportedOperationException();
     }
@@ -511,12 +532,6 @@ public abstract class AbstractMockMetadata
 
     @Override
     public Optional<ResolvedIndex> resolveIndex(Session session, TableHandle tableHandle, Set<ColumnHandle> indexableColumns, Set<ColumnHandle> outputColumns, TupleDomain<ColumnHandle> tupleDomain)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean usesLegacyTableLayouts(Session session, TableHandle table)
     {
         throw new UnsupportedOperationException();
     }
@@ -569,37 +584,55 @@ public abstract class AbstractMockMetadata
     //
 
     @Override
-    public void createRole(Session session, String role, Optional<TrinoPrincipal> grantor, String catalog)
+    public boolean isCatalogManagedSecurity(Session session, String catalog)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public void dropRole(Session session, String role, String catalog)
+    public boolean roleExists(Session session, String role, Optional<String> catalog)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Set<String> listRoles(Session session, String catalog)
+    public void createRole(Session session, String role, Optional<TrinoPrincipal> grantor, Optional<String> catalog)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public void grantRoles(Session session, Set<String> roles, Set<TrinoPrincipal> grantees, boolean adminOption, Optional<TrinoPrincipal> grantor, String catalog)
+    public void dropRole(Session session, String role, Optional<String> catalog)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public void revokeRoles(Session session, Set<String> roles, Set<TrinoPrincipal> grantees, boolean adminOption, Optional<TrinoPrincipal> grantor, String catalog)
+    public Set<String> listRoles(Session session, Optional<String> catalog)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Set<RoleGrant> listApplicableRoles(Session session, TrinoPrincipal principal, String catalog)
+    public void grantRoles(Session session, Set<String> roles, Set<TrinoPrincipal> grantees, boolean adminOption, Optional<TrinoPrincipal> grantor, Optional<String> catalog)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void revokeRoles(Session session, Set<String> roles, Set<TrinoPrincipal> grantees, boolean adminOption, Optional<TrinoPrincipal> grantor, Optional<String> catalog)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<RoleGrant> listApplicableRoles(Session session, TrinoPrincipal principal, Optional<String> catalog)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<String> listEnabledRoles(Identity identity)
     {
         throw new UnsupportedOperationException();
     }
@@ -611,19 +644,25 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Set<RoleGrant> listAllRoleGrants(Session session, String catalog, Optional<Set<String>> roles, Optional<Set<String>> grantees, OptionalLong limit)
+    public Set<RoleGrant> listAllRoleGrants(Session session, Optional<String> catalog, Optional<Set<String>> roles, Optional<Set<String>> grantees, OptionalLong limit)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Set<RoleGrant> listRoleGrants(Session session, String catalog, TrinoPrincipal principal)
+    public Set<RoleGrant> listRoleGrants(Session session, Optional<String> catalog, TrinoPrincipal principal)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public void grantSchemaPrivileges(Session session, CatalogSchemaName schemaName, Set<Privilege> privileges, TrinoPrincipal grantee, boolean grantOption)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void denySchemaPrivileges(Session session, CatalogSchemaName schemaName, Set<Privilege> privileges, TrinoPrincipal grantee)
     {
         throw new UnsupportedOperationException();
     }
@@ -641,6 +680,12 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
+    public void denyTablePrivileges(Session session, QualifiedObjectName tableName, Set<Privilege> privileges, TrinoPrincipal grantee)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void revokeTablePrivileges(Session session, QualifiedObjectName tableName, Set<Privilege> privileges, TrinoPrincipal grantee, boolean grantOption)
     {
         throw new UnsupportedOperationException();
@@ -648,46 +693,6 @@ public abstract class AbstractMockMetadata
 
     @Override
     public List<GrantInfo> listTablePrivileges(Session session, QualifiedTablePrefix prefix)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    //
-    // Types
-    //
-
-    @Override
-    public Type getType(TypeSignature signature)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Type fromSqlType(String sqlType)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Type getType(TypeId id)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void verifyTypes()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<Type> getTypes()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<ParametricType> getParametricTypes()
     {
         throw new UnsupportedOperationException();
     }
@@ -716,31 +721,38 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public ResolvedFunction resolveFunction(QualifiedName name, List<TypeSignatureProvider> parameterTypes)
+    public ResolvedFunction resolveFunction(Session session, QualifiedName name, List<TypeSignatureProvider> parameterTypes)
     {
         String nameSuffix = name.getSuffix();
         if (nameSuffix.equals("rand") && parameterTypes.isEmpty()) {
             BoundSignature boundSignature = new BoundSignature(nameSuffix, DOUBLE, ImmutableList.of());
-            return new ResolvedFunction(boundSignature, toFunctionId(boundSignature.toSignature()), ImmutableMap.of(), ImmutableSet.of());
+            return new ResolvedFunction(
+                    boundSignature,
+                    toFunctionId(boundSignature.toSignature()),
+                    SCALAR,
+                    true,
+                    new FunctionNullability(false, ImmutableList.of()),
+                    ImmutableMap.of(),
+                    ImmutableSet.of());
         }
         throw new TrinoException(FUNCTION_NOT_FOUND, name + "(" + Joiner.on(", ").join(parameterTypes) + ")");
     }
 
     @Override
-    public ResolvedFunction resolveOperator(OperatorType operatorType, List<? extends Type> argumentTypes)
+    public ResolvedFunction resolveOperator(Session session, OperatorType operatorType, List<? extends Type> argumentTypes)
             throws OperatorNotFoundException
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public ResolvedFunction getCoercion(OperatorType operatorType, Type fromType, Type toType)
+    public ResolvedFunction getCoercion(Session session, OperatorType operatorType, Type fromType, Type toType)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public ResolvedFunction getCoercion(QualifiedName name, Type fromType, Type toType)
+    public ResolvedFunction getCoercion(Session session, QualifiedName name, Type fromType, Type toType)
     {
         throw new UnsupportedOperationException();
     }
@@ -756,7 +768,7 @@ public abstract class AbstractMockMetadata
     {
         BoundSignature signature = resolvedFunction.getSignature();
         if (signature.getName().equals("rand") && signature.getArgumentTypes().isEmpty()) {
-            return new FunctionMetadata(signature.toSignature(), false, ImmutableList.of(), false, false, "", SCALAR);
+            return new FunctionMetadata(signature.toSignature(), new FunctionNullability(false, ImmutableList.of()), false, false, "", SCALAR);
         }
         throw new TrinoException(FUNCTION_NOT_FOUND, signature.toString());
     }
@@ -774,69 +786,13 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public InternalAggregationFunction getAggregateFunctionImplementation(ResolvedFunction resolvedFunction)
+    public AggregationMetadata getAggregateFunctionImplementation(ResolvedFunction resolvedFunction)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public FunctionInvoker getScalarFunctionInvoker(ResolvedFunction resolvedFunction, InvocationConvention invocationConvention)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public ProcedureRegistry getProcedureRegistry()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    //
-    // Blocks
-    //
-
-    @Override
-    public BlockEncodingSerde getBlockEncodingSerde()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    //
-    // Properties
-    //
-
-    @Override
-    public SessionPropertyManager getSessionPropertyManager()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public SchemaPropertyManager getSchemaPropertyManager()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public TablePropertyManager getTablePropertyManager()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public MaterializedViewPropertyManager getMaterializedViewPropertyManager()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public ColumnPropertyManager getColumnPropertyManager()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public AnalyzePropertyManager getAnalyzePropertyManager()
     {
         throw new UnsupportedOperationException();
     }
@@ -854,7 +810,7 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public void createMaterializedView(Session session, QualifiedObjectName viewName, ConnectorMaterializedViewDefinition definition, boolean replace, boolean ignoreExisting)
+    public void createMaterializedView(Session session, QualifiedObjectName viewName, MaterializedViewDefinition definition, boolean replace, boolean ignoreExisting)
     {
         throw new UnsupportedOperationException();
     }
@@ -872,19 +828,31 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public Map<QualifiedObjectName, ConnectorMaterializedViewDefinition> getMaterializedViews(Session session, QualifiedTablePrefix prefix)
+    public Map<QualifiedObjectName, ViewInfo> getMaterializedViews(Session session, QualifiedTablePrefix prefix)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<ConnectorMaterializedViewDefinition> getMaterializedView(Session session, QualifiedObjectName viewName)
+    public Optional<MaterializedViewDefinition> getMaterializedView(Session session, QualifiedObjectName viewName)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public MaterializedViewFreshness getMaterializedViewFreshness(Session session, QualifiedObjectName name)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void renameMaterializedView(Session session, QualifiedObjectName existingViewName, QualifiedObjectName newViewName)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void setMaterializedViewProperties(Session session, QualifiedObjectName viewName, Map<String, Optional<Object>> properties)
     {
         throw new UnsupportedOperationException();
     }
@@ -899,5 +867,23 @@ public abstract class AbstractMockMetadata
     public RedirectionAwareTableHandle getRedirectionAwareTableHandle(Session session, QualifiedObjectName tableName)
     {
         return noRedirection(getTableHandle(session, tableName));
+    }
+
+    @Override
+    public RedirectionAwareTableHandle getRedirectionAwareTableHandle(Session session, QualifiedObjectName tableName, Optional<TableVersion> startVersion, Optional<TableVersion> endVersion)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isValidTableVersion(Session session, QualifiedObjectName tableName, TableVersion version)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Optional<TableHandle> getTableHandle(Session session, QualifiedObjectName table, Optional<TableVersion> startVersion, Optional<TableVersion> endVersion)
+    {
+        throw new UnsupportedOperationException();
     }
 }

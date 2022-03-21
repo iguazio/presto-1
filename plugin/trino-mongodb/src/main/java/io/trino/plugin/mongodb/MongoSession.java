@@ -14,18 +14,17 @@
 package io.trino.plugin.mongodb;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Primitives;
 import com.google.common.primitives.Shorts;
 import com.google.common.primitives.SignedBytes;
-import com.google.common.util.concurrent.UncheckedExecutionException;
-import com.mongodb.MongoClient;
+import com.mongodb.DBRef;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
@@ -33,6 +32,8 @@ import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.result.DeleteResult;
 import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
+import io.trino.plugin.base.cache.EvictableCache;
+import io.trino.spi.HostAddress;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
@@ -62,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -71,18 +73,19 @@ import static com.google.common.base.Throwables.throwIfInstanceOf;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.plugin.mongodb.ObjectIdType.OBJECT_ID;
+import static io.trino.spi.HostAddress.fromParts;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.SmallintType.SMALLINT;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TinyintType.TINYINT;
+import static io.trino.spi.type.VarcharType.VARCHAR;
 import static io.trino.spi.type.VarcharType.createUnboundedVarcharType;
 import static java.lang.Math.toIntExact;
 import static java.lang.String.format;
 import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
@@ -108,6 +111,10 @@ public class MongoSession
     private static final String LTE_OP = "$lte";
     private static final String IN_OP = "$in";
 
+    private static final String DATABASE_NAME = "databaseName";
+    private static final String COLLECTION_NAME = "collectionName";
+    private static final String ID = "id";
+
     private final TypeManager typeManager;
     private final MongoClient client;
 
@@ -115,7 +122,7 @@ public class MongoSession
     private final boolean caseInsensitiveNameMatching;
     private final int cursorBatchSize;
 
-    private final LoadingCache<SchemaTableName, MongoTable> tableCache;
+    private final Cache<SchemaTableName, MongoTable> tableCache;
     private final String implicitPrefix;
 
     public MongoSession(TypeManager typeManager, MongoClient client, MongoClientConfig config)
@@ -127,15 +134,20 @@ public class MongoSession
         this.cursorBatchSize = config.getCursorBatchSize();
         this.implicitPrefix = requireNonNull(config.getImplicitRowFieldPrefix(), "config.getImplicitRowFieldPrefix() is null");
 
-        this.tableCache = CacheBuilder.newBuilder()
-                .expireAfterWrite(1, HOURS)  // TODO: Configure
-                .refreshAfterWrite(1, MINUTES)
-                .build(CacheLoader.from(this::loadTableSchema));
+        this.tableCache = EvictableCache.buildWith(CacheBuilder.newBuilder()
+                .expireAfterWrite(1, MINUTES));  // TODO: Configure
     }
 
     public void shutdown()
     {
         client.close();
+    }
+
+    public List<HostAddress> getAddresses()
+    {
+        return client.getClusterDescription().getServerDescriptions().stream()
+                .map(description -> fromParts(description.getAddress().getHost(), description.getAddress().getPort()))
+                .collect(toImmutableList());
     }
 
     public List<String> getAllSchemas()
@@ -164,11 +176,11 @@ public class MongoSession
             throws TableNotFoundException
     {
         try {
-            return tableCache.getUnchecked(tableName);
+            return tableCache.get(tableName, () -> loadTableSchema(tableName));
         }
-        catch (UncheckedExecutionException e) {
+        catch (ExecutionException e) {
             throwIfInstanceOf(e.getCause(), TrinoException.class);
-            throw e;
+            throw new RuntimeException(e);
         }
     }
 
@@ -503,7 +515,6 @@ public class MongoSession
     }
 
     private void createTableMetadata(SchemaTableName schemaTableName, List<MongoColumnHandle> columns)
-            throws TableNotFoundException
     {
         String schemaName = schemaTableName.getSchemaName();
         String tableName = schemaTableName.getTableName();
@@ -640,6 +651,18 @@ public class MongoSession
                 typeSignature = new TypeSignature(StandardTypes.ROW, parameters);
             }
         }
+        else if (value instanceof DBRef) {
+            List<TypeSignatureParameter> parameters = new ArrayList<>();
+
+            TypeSignature idFieldType = guessFieldType(((DBRef) value).getId())
+                    .orElseThrow(() -> new UnsupportedOperationException("Unable to guess $id field type of DBRef from: " + ((DBRef) value).getId()));
+
+            parameters.add(TypeSignatureParameter.namedTypeParameter(new NamedTypeSignature(Optional.of(new RowFieldName(DATABASE_NAME)), VARCHAR.getTypeSignature())));
+            parameters.add(TypeSignatureParameter.namedTypeParameter(new NamedTypeSignature(Optional.of(new RowFieldName(COLLECTION_NAME)), VARCHAR.getTypeSignature())));
+            parameters.add(TypeSignatureParameter.namedTypeParameter(new NamedTypeSignature(Optional.of(new RowFieldName(ID)), idFieldType)));
+
+            typeSignature = new TypeSignature(StandardTypes.ROW, parameters);
+        }
 
         return Optional.ofNullable(typeSignature);
     }
@@ -678,7 +701,7 @@ public class MongoSession
                 .put("listCollections", 1.0)
                 .put("filter", documentOf("name", tableName))
                 .put("nameOnly", true)
-                .build());
+                .buildOrThrow());
         Document cursor = client.getDatabase(schemaName).runCommand(listCollectionsCommand).get("cursor", Document.class);
         List<Document> firstBatch = cursor.get("firstBatch", List.class);
         if (firstBatch.isEmpty()) {

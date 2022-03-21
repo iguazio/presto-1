@@ -43,8 +43,8 @@ public class TestGlueHiveMetastoreConfig
                 .setPartitionSegments(5)
                 .setGetPartitionThreads(20)
                 .setAssumeCanonicalPartitionKeys(false)
-                .setReadStatisticsThreads(1)
-                .setWriteStatisticsThreads(1));
+                .setReadStatisticsThreads(5)
+                .setWriteStatisticsThreads(5));
     }
 
     @Test
@@ -68,7 +68,7 @@ public class TestGlueHiveMetastoreConfig
                 .put("hive.metastore.glue.assume-canonical-partition-keys", "true")
                 .put("hive.metastore.glue.read-statistics-threads", "42")
                 .put("hive.metastore.glue.write-statistics-threads", "43")
-                .build();
+                .buildOrThrow();
 
         GlueHiveMetastoreConfig expected = new GlueHiveMetastoreConfig()
                 .setGlueRegion("us-east-1")

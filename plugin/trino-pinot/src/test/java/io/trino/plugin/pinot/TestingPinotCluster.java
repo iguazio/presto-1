@@ -24,6 +24,7 @@ import io.airlift.http.client.Request;
 import io.airlift.http.client.StaticBodyGenerator;
 import io.airlift.http.client.jetty.JettyHttpClient;
 import io.airlift.json.JsonCodec;
+import okhttp3.Credentials;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
@@ -32,6 +33,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -48,7 +50,7 @@ import static org.testcontainers.utility.DockerImageName.parse;
 public class TestingPinotCluster
         implements Closeable
 {
-    private static final String BASE_IMAGE = "apachepinot/pinot:0.6.0";
+    private static final String BASE_IMAGE = "apachepinot/pinot:0.8.0-jdk11";
     private static final String ZOOKEEPER_INTERNAL_HOST = "zookeeper";
     private static final JsonCodec<List<String>> LIST_JSON_CODEC = listJsonCodec(String.class);
     private static final JsonCodec<PinotSuccessResponse> PINOT_SUCCESS_RESPONSE_JSON_CODEC = jsonCodec(PinotSuccessResponse.class);
@@ -64,8 +66,9 @@ public class TestingPinotCluster
     private final GenericContainer<?> zookeeper;
     private final HttpClient httpClient;
     private final Closer closer = Closer.create();
+    private final boolean secured;
 
-    public TestingPinotCluster(Network network)
+    public TestingPinotCluster(Network network, boolean secured)
     {
         httpClient = closer.register(new JettyHttpClient());
         zookeeper = new GenericContainer<>(parse("zookeeper:3.5.6"))
@@ -75,20 +78,22 @@ public class TestingPinotCluster
                 .withExposedPorts(ZOOKEEPER_PORT);
         closer.register(zookeeper::stop);
 
+        String controllerConfig = secured ? "/var/pinot/controller/config/pinot-controller-secured.conf" : "/var/pinot/controller/config/pinot-controller.conf";
         controller = new GenericContainer<>(parse(BASE_IMAGE))
                 .withNetwork(network)
                 .withClasspathResourceMapping("/pinot-controller", "/var/pinot/controller/config", BindMode.READ_ONLY)
                 .withEnv("JAVA_OPTS", "-Xmx512m -Dlog4j2.configurationFile=/opt/pinot/conf/pinot-controller-log4j2.xml -Dplugins.dir=/opt/pinot/plugins")
-                .withCommand("StartController", "-configFileName", "/var/pinot/controller/config/pinot-controller.conf")
+                .withCommand("StartController", "-configFileName", controllerConfig)
                 .withNetworkAliases("pinot-controller", "localhost")
                 .withExposedPorts(CONTROLLER_PORT);
         closer.register(controller::stop);
 
+        String brokerConfig = secured ? "/var/pinot/broker/config/pinot-broker-secured.conf" : "/var/pinot/broker/config/pinot-broker.conf";
         broker = new GenericContainer<>(parse(BASE_IMAGE))
                 .withNetwork(network)
                 .withClasspathResourceMapping("/pinot-broker", "/var/pinot/broker/config", BindMode.READ_ONLY)
                 .withEnv("JAVA_OPTS", "-Xmx512m -Dlog4j2.configurationFile=/opt/pinot/conf/pinot-broker-log4j2.xml -Dplugins.dir=/opt/pinot/plugins")
-                .withCommand("StartBroker", "-clusterName", "pinot", "-zkAddress", getZookeeperInternalHostPort(), "-configFileName", "/var/pinot/broker/config/pinot-broker.conf")
+                .withCommand("StartBroker", "-clusterName", "pinot", "-zkAddress", getZookeeperInternalHostPort(), "-configFileName", brokerConfig)
                 .withNetworkAliases("pinot-broker", "localhost")
                 .withExposedPorts(BROKER_PORT);
         closer.register(broker::stop);
@@ -101,6 +106,8 @@ public class TestingPinotCluster
                 .withNetworkAliases("pinot-server", "localhost")
                 .withExposedPorts(SERVER_PORT, SERVER_ADMIN_PORT);
         closer.register(server::stop);
+
+        this.secured = secured;
     }
 
     public void start()
@@ -146,6 +153,7 @@ public class TestingPinotCluster
                 .setUri(getControllerUri("schemas"))
                 .setHeader(HttpHeaders.ACCEPT, APPLICATION_JSON)
                 .setHeader(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON)
+                .addHeader(HttpHeaders.AUTHORIZATION, secured ? controllerAuthToken() : "")
                 .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(bytes))
                 .build();
 
@@ -164,6 +172,7 @@ public class TestingPinotCluster
     {
         Request request = Request.Builder.prepareGet().setUri(getControllerUri("schemas"))
                 .setHeader(HttpHeaders.ACCEPT, APPLICATION_JSON)
+                .addHeader(HttpHeaders.AUTHORIZATION, secured ? controllerAuthToken() : "")
                 .build();
         doWithRetries(() -> {
             List<String> schemas = httpClient.execute(request, createJsonResponseHandler(LIST_JSON_CODEC));
@@ -180,6 +189,7 @@ public class TestingPinotCluster
                 .setUri(getControllerUri("tables"))
                 .setHeader(HttpHeaders.ACCEPT, APPLICATION_JSON)
                 .setHeader(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON)
+                .addHeader(HttpHeaders.AUTHORIZATION, secured ? controllerAuthToken() : "")
                 .setBodyGenerator(StaticBodyGenerator.createStaticBodyGenerator(bytes))
                 .build();
 
@@ -202,6 +212,12 @@ public class TestingPinotCluster
             Thread.sleep(1000);
         }
         throw exception;
+    }
+
+    private static String controllerAuthToken()
+    {
+        // Secrets defined in pinot-controller-secured.conf
+        return Credentials.basic("admin", "verysecret", StandardCharsets.ISO_8859_1);
     }
 
     public static class PinotSuccessResponse

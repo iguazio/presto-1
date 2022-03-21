@@ -20,7 +20,6 @@ import io.trino.plugin.base.jmx.MBeanServerModule;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 import org.weakref.jmx.guice.MBeanModule;
 
 import java.util.Map;
@@ -37,12 +36,6 @@ public class CassandraConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new CassandraHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> config, ConnectorContext context)
     {
         requireNonNull(config, "config is null");
@@ -50,10 +43,10 @@ public class CassandraConnectorFactory
         Bootstrap app = new Bootstrap(
                 new MBeanModule(),
                 new JsonModule(),
-                new CassandraClientModule(),
+                new CassandraClientModule(context.getTypeManager()),
                 new MBeanServerModule());
 
-        Injector injector = app.strictConfig().doNotInitializeLogging()
+        Injector injector = app.doNotInitializeLogging()
                 .setRequiredConfigurationProperties(config)
                 .initialize();
 

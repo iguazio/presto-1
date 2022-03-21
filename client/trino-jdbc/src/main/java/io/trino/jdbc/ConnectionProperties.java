@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import io.airlift.units.Duration;
 import io.trino.client.ClientSelectedRole;
+import io.trino.client.auth.external.ExternalRedirectStrategy;
 
 import java.io.File;
 import java.util.List;
@@ -28,8 +29,10 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.StreamSupport;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.Maps.immutableEntry;
 import static io.trino.client.ClientSelectedRole.Type.ALL;
@@ -71,9 +74,11 @@ final class ConnectionProperties
     public static final ConnectionProperty<File> KERBEROS_CONFIG_PATH = new KerberosConfigPath();
     public static final ConnectionProperty<File> KERBEROS_KEYTAB_PATH = new KerberosKeytabPath();
     public static final ConnectionProperty<File> KERBEROS_CREDENTIAL_CACHE_PATH = new KerberosCredentialCachePath();
+    public static final ConnectionProperty<Boolean> KERBEROS_DELEGATION = new KerberosDelegation();
     public static final ConnectionProperty<String> ACCESS_TOKEN = new AccessToken();
     public static final ConnectionProperty<Boolean> EXTERNAL_AUTHENTICATION = new ExternalAuthentication();
     public static final ConnectionProperty<Duration> EXTERNAL_AUTHENTICATION_TIMEOUT = new ExternalAuthenticationTimeout();
+    public static final ConnectionProperty<List<ExternalRedirectStrategy>> EXTERNAL_AUTHENTICATION_REDIRECT_HANDLERS = new ExternalAuthenticationRedirectHandlers();
     public static final ConnectionProperty<KnownTokenCache> EXTERNAL_AUTHENTICATION_TOKEN_CACHE = new ExternalAuthenticationTokenCache();
     public static final ConnectionProperty<Map<String, String>> EXTRA_CREDENTIALS = new ExtraCredentials();
     public static final ConnectionProperty<String> CLIENT_INFO = new ClientInfo();
@@ -107,6 +112,7 @@ final class ConnectionProperties
             .add(KERBEROS_CONFIG_PATH)
             .add(KERBEROS_KEYTAB_PATH)
             .add(KERBEROS_CREDENTIAL_CACHE_PATH)
+            .add(KERBEROS_DELEGATION)
             .add(ACCESS_TOKEN)
             .add(EXTRA_CREDENTIALS)
             .add(CLIENT_INFO)
@@ -117,6 +123,7 @@ final class ConnectionProperties
             .add(EXTERNAL_AUTHENTICATION)
             .add(EXTERNAL_AUTHENTICATION_TIMEOUT)
             .add(EXTERNAL_AUTHENTICATION_TOKEN_CACHE)
+            .add(EXTERNAL_AUTHENTICATION_REDIRECT_HANDLERS)
             .build();
 
     private static final Map<String, ConnectionProperty<?>> KEY_LOOKUP = unmodifiableMap(ALL_PROPERTIES.stream()
@@ -129,7 +136,7 @@ final class ConnectionProperties
         for (ConnectionProperty<?> property : ALL_PROPERTIES) {
             property.getDefault().ifPresent(value -> defaults.put(property.getKey(), value));
         }
-        DEFAULTS = defaults.build();
+        DEFAULTS = defaults.buildOrThrow();
     }
 
     private ConnectionProperties() {}
@@ -390,6 +397,11 @@ final class ConnectionProperties
         return checkedPredicate(properties -> KERBEROS_REMOTE_SERVICE_NAME.getValue(properties).isPresent());
     }
 
+    private static Predicate<Properties> isKerberosWithoutDelegation()
+    {
+        return isKerberosEnabled().and(checkedPredicate(properties -> !KERBEROS_DELEGATION.getValue(properties).orElse(false)));
+    }
+
     private static class KerberosServicePrincipalPattern
             extends AbstractConnectionProperty<String>
     {
@@ -404,7 +416,7 @@ final class ConnectionProperties
     {
         public KerberosPrincipal()
         {
-            super("KerberosPrincipal", NOT_REQUIRED, isKerberosEnabled(), STRING_CONVERTER);
+            super("KerberosPrincipal", NOT_REQUIRED, isKerberosWithoutDelegation(), STRING_CONVERTER);
         }
     }
 
@@ -422,7 +434,7 @@ final class ConnectionProperties
     {
         public KerberosConfigPath()
         {
-            super("KerberosConfigPath", NOT_REQUIRED, isKerberosEnabled(), FILE_CONVERTER);
+            super("KerberosConfigPath", NOT_REQUIRED, isKerberosWithoutDelegation(), FILE_CONVERTER);
         }
     }
 
@@ -431,7 +443,7 @@ final class ConnectionProperties
     {
         public KerberosKeytabPath()
         {
-            super("KerberosKeytabPath", NOT_REQUIRED, isKerberosEnabled(), FILE_CONVERTER);
+            super("KerberosKeytabPath", NOT_REQUIRED, isKerberosWithoutDelegation(), FILE_CONVERTER);
         }
     }
 
@@ -440,7 +452,16 @@ final class ConnectionProperties
     {
         public KerberosCredentialCachePath()
         {
-            super("KerberosCredentialCachePath", NOT_REQUIRED, isKerberosEnabled(), FILE_CONVERTER);
+            super("KerberosCredentialCachePath", NOT_REQUIRED, isKerberosWithoutDelegation(), FILE_CONVERTER);
+        }
+    }
+
+    private static class KerberosDelegation
+            extends AbstractConnectionProperty<Boolean>
+    {
+        public KerberosDelegation()
+        {
+            super("KerberosDelegation", Optional.of("false"), isKerberosEnabled(), ALLOWED, BOOLEAN_CONVERTER);
         }
     }
 
@@ -459,6 +480,24 @@ final class ConnectionProperties
         public ExternalAuthentication()
         {
             super("externalAuthentication", Optional.of("false"), NOT_REQUIRED, ALLOWED, BOOLEAN_CONVERTER);
+        }
+    }
+
+    private static class ExternalAuthenticationRedirectHandlers
+            extends AbstractConnectionProperty<List<ExternalRedirectStrategy>>
+    {
+        private static final Splitter ENUM_SPLITTER = Splitter.on(',').trimResults().omitEmptyStrings();
+
+        public ExternalAuthenticationRedirectHandlers()
+        {
+            super("externalAuthenticationRedirectHandlers", Optional.of("OPEN"), NOT_REQUIRED, ALLOWED, ExternalAuthenticationRedirectHandlers::parse);
+        }
+
+        public static List<ExternalRedirectStrategy> parse(String value)
+        {
+            return StreamSupport.stream(ENUM_SPLITTER.split(value).spliterator(), false)
+                    .map(ExternalRedirectStrategy::valueOf)
+                    .collect(toImmutableList());
         }
     }
 

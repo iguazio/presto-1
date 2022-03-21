@@ -14,7 +14,6 @@
 package io.trino.execution.scheduler;
 
 import com.google.common.base.Suppliers;
-import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
@@ -27,7 +26,9 @@ import io.trino.connector.CatalogName;
 import io.trino.execution.NodeTaskMap;
 import io.trino.metadata.InternalNode;
 import io.trino.metadata.InternalNodeManager;
+import io.trino.plugin.base.cache.NonEvictableCache;
 import io.trino.spi.HostAddress;
+import io.trino.spi.SplitWeight;
 
 import javax.inject.Inject;
 
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -44,6 +46,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static io.trino.SystemSessionProperties.getMaxUnacknowledgedSplitsPerTask;
 import static io.trino.metadata.NodeState.ACTIVE;
+import static io.trino.plugin.base.cache.SafeCaches.buildNonEvictableCache;
 import static java.util.Objects.requireNonNull;
 
 public class TopologyAwareNodeSelectorFactory
@@ -51,16 +54,16 @@ public class TopologyAwareNodeSelectorFactory
 {
     private static final Logger LOG = Logger.get(TopologyAwareNodeSelectorFactory.class);
 
-    private final Cache<InternalNode, Boolean> inaccessibleNodeLogCache = CacheBuilder.newBuilder()
-            .expireAfterWrite(30, TimeUnit.SECONDS)
-            .build();
+    private final NonEvictableCache<InternalNode, Object> inaccessibleNodeLogCache = buildNonEvictableCache(
+            CacheBuilder.newBuilder()
+                    .expireAfterWrite(30, TimeUnit.SECONDS));
 
     private final NetworkTopology networkTopology;
     private final InternalNodeManager nodeManager;
     private final int minCandidates;
     private final boolean includeCoordinator;
-    private final int maxSplitsPerNode;
-    private final int maxPendingSplitsPerTask;
+    private final long maxSplitsWeightPerNode;
+    private final long maxPendingSplitsWeightPerTask;
     private final NodeTaskMap nodeTaskMap;
 
     private final List<CounterStat> placementCounters;
@@ -84,10 +87,12 @@ public class TopologyAwareNodeSelectorFactory
         this.nodeManager = nodeManager;
         this.minCandidates = schedulerConfig.getMinCandidates();
         this.includeCoordinator = schedulerConfig.isIncludeCoordinator();
-        this.maxSplitsPerNode = schedulerConfig.getMaxSplitsPerNode();
-        this.maxPendingSplitsPerTask = schedulerConfig.getMaxPendingSplitsPerTask();
         this.nodeTaskMap = requireNonNull(nodeTaskMap, "nodeTaskMap is null");
+        int maxSplitsPerNode = schedulerConfig.getMaxSplitsPerNode();
+        int maxPendingSplitsPerTask = schedulerConfig.getMaxPendingSplitsPerTask();
         checkArgument(maxSplitsPerNode >= maxPendingSplitsPerTask, "maxSplitsPerNode must be > maxPendingSplitsPerTask");
+        this.maxSplitsWeightPerNode = SplitWeight.rawValueForStandardSplitCount(maxSplitsPerNode);
+        this.maxPendingSplitsWeightPerTask = SplitWeight.rawValueForStandardSplitCount(maxPendingSplitsPerTask);
 
         Builder<CounterStat> placementCounters = ImmutableList.builder();
         ImmutableMap.Builder<String, CounterStat> placementCountersByName = ImmutableMap.builder();
@@ -104,7 +109,7 @@ public class TopologyAwareNodeSelectorFactory
         }
 
         this.placementCounters = placementCounters.build();
-        this.placementCountersByName = placementCountersByName.build();
+        this.placementCountersByName = placementCountersByName.buildOrThrow();
     }
 
     public Map<String, CounterStat> getPlacementCountersByName()
@@ -129,8 +134,8 @@ public class TopologyAwareNodeSelectorFactory
                 includeCoordinator,
                 nodeMap,
                 minCandidates,
-                maxSplitsPerNode,
-                maxPendingSplitsPerTask,
+                maxSplitsWeightPerNode,
+                maxPendingSplitsWeightPerTask,
                 getMaxUnacknowledgedSplitsPerTask(session),
                 placementCounters,
                 networkTopology);
@@ -158,18 +163,30 @@ public class TopologyAwareNodeSelectorFactory
             }
             try {
                 byHostAndPort.put(node.getHostAndPort(), node);
-
-                InetAddress host = InetAddress.getByName(node.getInternalUri().getHost());
-                byHost.put(host, node);
+                byHost.put(node.getInternalAddress(), node);
             }
             catch (UnknownHostException e) {
-                if (inaccessibleNodeLogCache.getIfPresent(node) == null) {
-                    inaccessibleNodeLogCache.put(node, true);
+                if (markInaccessibleNode(node)) {
                     LOG.warn(e, "Unable to resolve host name for node: %s", node);
                 }
             }
         }
 
         return new NodeMap(byHostAndPort.build(), byHost.build(), workersByNetworkPath.build(), coordinatorNodeIds);
+    }
+
+    /**
+     * Returns true if node has been marked as inaccessible, or false if it was known to be inaccessible.
+     */
+    private boolean markInaccessibleNode(InternalNode node)
+    {
+        Object marker = new Object();
+        try {
+            return inaccessibleNodeLogCache.get(node, () -> marker) == marker;
+        }
+        catch (ExecutionException e) {
+            // impossible
+            throw new RuntimeException(e);
+        }
     }
 }

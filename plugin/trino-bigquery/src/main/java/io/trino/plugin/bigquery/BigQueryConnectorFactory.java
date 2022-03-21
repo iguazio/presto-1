@@ -20,7 +20,6 @@ import io.trino.spi.NodeManager;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 import io.trino.spi.type.TypeManager;
 
 import java.util.Map;
@@ -37,12 +36,6 @@ public class BigQueryConnectorFactory
     }
 
     @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new BigQueryHandleResolver();
-    }
-
-    @Override
     public Connector create(String catalogName, Map<String, String> config, ConnectorContext context)
     {
         requireNonNull(catalogName, "catalogName is null");
@@ -56,7 +49,7 @@ public class BigQueryConnectorFactory
                     binder.bind(NodeManager.class).toInstance(context.getNodeManager());
                 });
 
-        Injector injector = app.strictConfig()
+        Injector injector = app
                 .doNotInitializeLogging()
                 .setRequiredConfigurationProperties(config)
                 .initialize();

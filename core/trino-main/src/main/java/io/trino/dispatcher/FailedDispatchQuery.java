@@ -281,7 +281,6 @@ public class FailedDispatchQuery
                 DataSize.ofBytes(0),
                 DataSize.ofBytes(0),
                 DataSize.ofBytes(0),
-                DataSize.ofBytes(0),
                 false,
                 new Duration(0, MILLISECONDS),
                 new Duration(0, MILLISECONDS),

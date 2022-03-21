@@ -237,13 +237,6 @@ public class RunLengthEncodedBlock
     }
 
     @Override
-    public void writePositionTo(int position, BlockBuilder blockBuilder)
-    {
-        checkReadablePosition(position);
-        value.writePositionTo(0, blockBuilder);
-    }
-
-    @Override
     public boolean equals(int position, int offset, Block otherBlock, int otherPosition, int otherOffset, int length)
     {
         checkReadablePosition(position);
@@ -269,6 +262,12 @@ public class RunLengthEncodedBlock
     {
         checkReadablePosition(position);
         return value;
+    }
+
+    @Override
+    public boolean mayHaveNull()
+    {
+        return positionCount > 0 && value.isNull(0);
     }
 
     @Override

@@ -61,7 +61,7 @@ public class TestCassandraClientConfig
                 .setTokenAwareShuffleReplicas(false)
                 .setAllowedAddresses("")
                 .setNoHostAvailableRetryTimeout(new Duration(1, MINUTES))
-                .setSpeculativeExecutionLimit(1)
+                .setSpeculativeExecutionLimit(null)
                 .setSpeculativeExecutionDelay(new Duration(500, MILLISECONDS))
                 .setProtocolVersion(null)
                 .setTlsEnabled(false)
@@ -110,7 +110,7 @@ public class TestCassandraClientConfig
                 .put("cassandra.tls.keystore-password", "keystore-password")
                 .put("cassandra.tls.truststore-path", truststoreFile.toString())
                 .put("cassandra.tls.truststore-password", "truststore-password")
-                .build();
+                .buildOrThrow();
 
         CassandraClientConfig expected = new CassandraClientConfig()
                 .setContactPoints("host1", "host2")

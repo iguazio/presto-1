@@ -40,15 +40,16 @@ public class TestTaskStats
             6,
             7,
             5,
+            28L,
             8,
             6,
+            29L,
             24,
             10,
 
             11.0,
             DataSize.ofBytes(12),
             DataSize.ofBytes(13),
-            DataSize.ofBytes(14),
             new Duration(15, NANOSECONDS),
             new Duration(16, NANOSECONDS),
             new Duration(18, NANOSECONDS),
@@ -102,15 +103,16 @@ public class TestTaskStats
         assertEquals(actual.getTotalDrivers(), 6);
         assertEquals(actual.getQueuedDrivers(), 7);
         assertEquals(actual.getQueuedPartitionedDrivers(), 5);
+        assertEquals(actual.getQueuedPartitionedSplitsWeight(), 28L);
         assertEquals(actual.getRunningDrivers(), 8);
         assertEquals(actual.getRunningPartitionedDrivers(), 6);
+        assertEquals(actual.getRunningPartitionedSplitsWeight(), 29L);
         assertEquals(actual.getBlockedDrivers(), 24);
         assertEquals(actual.getCompletedDrivers(), 10);
 
         assertEquals(actual.getCumulativeUserMemory(), 11.0);
         assertEquals(actual.getUserMemoryReservation(), DataSize.ofBytes(12));
         assertEquals(actual.getRevocableMemoryReservation(), DataSize.ofBytes(13));
-        assertEquals(actual.getSystemMemoryReservation(), DataSize.ofBytes(14));
 
         assertEquals(actual.getTotalScheduledTime(), new Duration(15, NANOSECONDS));
         assertEquals(actual.getTotalCpuTime(), new Duration(16, NANOSECONDS));

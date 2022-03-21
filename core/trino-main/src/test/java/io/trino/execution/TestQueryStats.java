@@ -22,6 +22,7 @@ import io.trino.operator.FilterAndProjectOperator;
 import io.trino.operator.OperatorStats;
 import io.trino.operator.TableWriterOperator;
 import io.trino.spi.eventlistener.StageGcStatistics;
+import io.trino.spi.metrics.Metrics;
 import io.trino.sql.planner.plan.PlanNodeId;
 import org.joda.time.DateTime;
 import org.testng.annotations.Test;
@@ -62,6 +63,8 @@ public class TestQueryStats
                     succinctBytes(116L),
                     117L,
                     1833,
+                    Metrics.EMPTY,
+                    Metrics.EMPTY,
                     succinctBytes(118L),
                     new Duration(119, NANOSECONDS),
                     120L,
@@ -69,10 +72,8 @@ public class TestQueryStats
                     new Duration(122, NANOSECONDS),
                     succinctBytes(124L),
                     succinctBytes(125L),
-                    succinctBytes(126L),
                     succinctBytes(127L),
                     succinctBytes(128L),
-                    succinctBytes(129L),
                     succinctBytes(130L),
                     succinctBytes(131L),
                     Optional.empty(),
@@ -101,6 +102,8 @@ public class TestQueryStats
                     succinctBytes(216L),
                     217L,
                     2833,
+                    Metrics.EMPTY,
+                    Metrics.EMPTY,
                     succinctBytes(218L),
                     new Duration(219, NANOSECONDS),
                     220L,
@@ -108,10 +111,8 @@ public class TestQueryStats
                     new Duration(222, NANOSECONDS),
                     succinctBytes(224L),
                     succinctBytes(225L),
-                    succinctBytes(226L),
                     succinctBytes(227L),
                     succinctBytes(228L),
-                    succinctBytes(229L),
                     succinctBytes(230L),
                     succinctBytes(231L),
                     Optional.empty(),
@@ -140,6 +141,8 @@ public class TestQueryStats
                     succinctBytes(316L),
                     317L,
                     3833,
+                    Metrics.EMPTY,
+                    Metrics.EMPTY,
                     succinctBytes(318L),
                     new Duration(319, NANOSECONDS),
                     320L,
@@ -147,11 +150,9 @@ public class TestQueryStats
                     new Duration(322, NANOSECONDS),
                     succinctBytes(324L),
                     succinctBytes(325L),
-                    succinctBytes(326L),
                     succinctBytes(327L),
                     succinctBytes(328L),
                     succinctBytes(329L),
-                    succinctBytes(330L),
                     succinctBytes(331L),
                     Optional.empty(),
                     null));
@@ -187,7 +188,6 @@ public class TestQueryStats
             DataSize.ofBytes(20),
             DataSize.ofBytes(21),
             DataSize.ofBytes(22),
-            DataSize.ofBytes(30),
             DataSize.ofBytes(23),
             DataSize.ofBytes(24),
             DataSize.ofBytes(25),

@@ -36,6 +36,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.MetricsConfig;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.types.Types;
 import org.weakref.jmx.Managed;
@@ -62,6 +63,7 @@ import static io.trino.plugin.iceberg.IcebergSessionProperties.getOrcWriterMaxSt
 import static io.trino.plugin.iceberg.IcebergSessionProperties.getOrcWriterMaxStripeSize;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.getOrcWriterMinStripeSize;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.getOrcWriterValidateMode;
+import static io.trino.plugin.iceberg.IcebergSessionProperties.getParquetWriterBatchSize;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.getParquetWriterBlockSize;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.getParquetWriterPageSize;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.isOrcWriterValidate;
@@ -109,13 +111,15 @@ public class IcebergFileWriterFactory
             JobConf jobConf,
             ConnectorSession session,
             HdfsContext hdfsContext,
-            FileFormat fileFormat)
+            FileFormat fileFormat,
+            MetricsConfig metricsConfig)
     {
         switch (fileFormat) {
             case PARQUET:
+                // TODO use metricsConfig
                 return createParquetWriter(outputPath, icebergSchema, jobConf, session, hdfsContext);
             case ORC:
-                return createOrcWriter(outputPath, icebergSchema, jobConf, session);
+                return createOrcWriter(metricsConfig, outputPath, icebergSchema, jobConf, session);
             default:
                 throw new TrinoException(NOT_SUPPORTED, "File format not supported for Iceberg: " + fileFormat);
         }
@@ -136,7 +140,7 @@ public class IcebergFileWriterFactory
                 .collect(toImmutableList());
 
         try {
-            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getUser(), outputPath, jobConf);
+            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getIdentity(), outputPath, jobConf);
 
             Callable<Void> rollbackAction = () -> {
                 fileSystem.delete(outputPath, false);
@@ -145,11 +149,12 @@ public class IcebergFileWriterFactory
 
             ParquetWriterOptions parquetWriterOptions = ParquetWriterOptions.builder()
                     .setMaxPageSize(getParquetWriterPageSize(session))
-                    .setMaxPageSize(getParquetWriterBlockSize(session))
+                    .setMaxBlockSize(getParquetWriterBlockSize(session))
+                    .setBatchSize(getParquetWriterBatchSize(session))
                     .build();
 
             return new IcebergParquetFileWriter(
-                    hdfsEnvironment.doAs(session.getUser(), () -> fileSystem.create(outputPath)),
+                    hdfsEnvironment.doAs(session.getIdentity(), () -> fileSystem.create(outputPath)),
                     rollbackAction,
                     fileColumnTypes,
                     convert(icebergSchema, "table"),
@@ -157,6 +162,7 @@ public class IcebergFileWriterFactory
                     parquetWriterOptions,
                     IntStream.range(0, fileColumnNames.size()).toArray(),
                     getCompressionCodec(session).getParquetCompressionCodec(),
+                    nodeVersion.toString(),
                     outputPath,
                     hdfsEnvironment,
                     hdfsContext);
@@ -167,16 +173,17 @@ public class IcebergFileWriterFactory
     }
 
     private IcebergFileWriter createOrcWriter(
+            MetricsConfig metricsConfig,
             Path outputPath,
             Schema icebergSchema,
             JobConf jobConf,
             ConnectorSession session)
     {
         try {
-            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getUser(), outputPath, jobConf);
-            OrcDataSink orcDataSink = hdfsEnvironment.doAs(session.getUser(), () -> new OutputStreamOrcDataSink(fileSystem.create(outputPath)));
+            FileSystem fileSystem = hdfsEnvironment.getFileSystem(session.getIdentity(), outputPath, jobConf);
+            OrcDataSink orcDataSink = hdfsEnvironment.doAs(session.getIdentity(), () -> new OutputStreamOrcDataSink(fileSystem.create(outputPath)));
             Callable<Void> rollbackAction = () -> {
-                hdfsEnvironment.doAs(session.getUser(), () -> fileSystem.delete(outputPath, false));
+                hdfsEnvironment.doAs(session.getIdentity(), () -> fileSystem.delete(outputPath, false));
                 return null;
             };
 
@@ -195,9 +202,9 @@ public class IcebergFileWriterFactory
                     try {
                         return new HdfsOrcDataSource(
                                 new OrcDataSourceId(outputPath.toString()),
-                                hdfsEnvironment.doAs(session.getUser(), () -> fileSystem.getFileStatus(outputPath).getLen()),
+                                hdfsEnvironment.doAs(session.getIdentity(), () -> fileSystem.getFileStatus(outputPath).getLen()),
                                 new OrcReaderOptions(),
-                                hdfsEnvironment.doAs(session.getUser(), () -> fileSystem.open(outputPath)),
+                                hdfsEnvironment.doAs(session.getIdentity(), () -> fileSystem.open(outputPath)),
                                 readStats);
                     }
                     catch (IOException e) {
@@ -207,6 +214,7 @@ public class IcebergFileWriterFactory
             }
 
             return new IcebergOrcFileWriter(
+                    metricsConfig,
                     icebergSchema,
                     orcDataSink,
                     rollbackAction,
@@ -224,7 +232,7 @@ public class IcebergFileWriterFactory
                     ImmutableMap.<String, String>builder()
                             .put(PRESTO_VERSION_NAME, nodeVersion.toString())
                             .put(PRESTO_QUERY_ID_NAME, session.getQueryId())
-                            .build(),
+                            .buildOrThrow(),
                     validationInputFactory,
                     getOrcWriterValidateMode(session),
                     orcWriterStats);
