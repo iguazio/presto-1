@@ -22,6 +22,7 @@ import io.airlift.slice.Slice;
 import io.trino.operator.scalar.AbstractTestFunctions;
 import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
+import io.trino.spi.block.BlockBuilder;
 import io.trino.spi.function.LiteralParameters;
 import io.trino.spi.function.ScalarFunction;
 import io.trino.spi.function.SqlType;
@@ -103,15 +104,15 @@ public class TestArrayOperators
     @Test
     public void testStackRepresentation()
     {
-        Block actualBlock = arrayBlockOf(new ArrayType(BIGINT), arrayBlockOf(BIGINT, 1L, 2L), arrayBlockOf(BIGINT, 3L));
+        ArrayType arrayType = new ArrayType(BIGINT);
+        Block actualBlock = arrayBlockOf(arrayType, arrayBlockOf(BIGINT, 1L, 2L), arrayBlockOf(BIGINT, 3L));
         DynamicSliceOutput actualSliceOutput = new DynamicSliceOutput(100);
         writeBlock(functionAssertions.getPlannerContext().getBlockEncodingSerde(), actualSliceOutput, actualBlock);
 
-        Block expectedBlock = new ArrayType(BIGINT)
-                .createBlockBuilder(null, 3)
-                .appendStructure(BIGINT.createBlockBuilder(null, 2).writeLong(1).closeEntry().writeLong(2).closeEntry().build())
-                .appendStructure(BIGINT.createBlockBuilder(null, 1).writeLong(3).closeEntry().build())
-                .build();
+        BlockBuilder expectedBlockBuilder = arrayType.createBlockBuilder(null, 3);
+        arrayType.writeObject(expectedBlockBuilder, BIGINT.createBlockBuilder(null, 2).writeLong(1).writeLong(2).build());
+        arrayType.writeObject(expectedBlockBuilder, BIGINT.createBlockBuilder(null, 1).writeLong(3).build());
+        Block expectedBlock = expectedBlockBuilder.build();
         DynamicSliceOutput expectedSliceOutput = new DynamicSliceOutput(100);
         writeBlock(functionAssertions.getPlannerContext().getBlockEncodingSerde(), expectedSliceOutput, expectedBlock);
 
@@ -271,7 +272,7 @@ public class TestArrayOperators
         // varchar, json
         assertFunction("CAST(JSON '[true, false, 12, 12.3, \"puppies\", \"kittens\", \"null\", \"\", null]' AS ARRAY<VARCHAR>)",
                 new ArrayType(VARCHAR),
-                asList("true", "false", "12", "12.3", "puppies", "kittens", "null", "", null));
+                asList("true", "false", "12", "1.23E1", "puppies", "kittens", "null", "", null));
         assertFunction("CAST(JSON '[5, 3.14, [1, 2, 3], \"e\", {\"a\": \"b\"}, null, \"null\", [null]]' AS ARRAY<JSON>)",
                 new ArrayType(JSON),
                 ImmutableList.of("5", "3.14", "[1,2,3]", "\"e\"", "{\"a\":\"b\"}", "null", "\"null\"", "[null]"));
@@ -439,7 +440,7 @@ public class TestArrayOperators
 
         assertThatThrownBy(() -> assertFunction("ARRAY [ARRAY [1]] || ARRAY [ARRAY ['x']]", new ArrayType(new ArrayType(INTEGER)), null))
                 .isInstanceOf(TrinoException.class)
-                .hasMessage("line 1:19: Unexpected parameters (array(array(integer)), array(array(varchar(1)))) for function concat. Expected: concat(char(x), char(y)) , concat(array(E), E) E, concat(E, array(E)) E, concat(array(E)) E, concat(varchar) , concat(varbinary) ");
+                .hasMessage("line 1:19: Unexpected parameters (array(array(integer)), array(array(varchar(1)))) for function concat. Expected: concat(char(x), char(y)), concat(array(E), E) E, concat(E, array(E)) E, concat(array(E)) E, concat(varchar), concat(varbinary)");
 
         assertCachedInstanceHasBoundedRetainedSize("ARRAY [1, NULL] || ARRAY [3]");
     }
@@ -477,7 +478,7 @@ public class TestArrayOperators
 
         assertThatThrownBy(() -> assertFunction("ARRAY [ARRAY[1]] || ARRAY ['x']", new ArrayType(new ArrayType(INTEGER)), null))
                 .isInstanceOf(TrinoException.class)
-                .hasMessage("line 1:18: Unexpected parameters (array(array(integer)), array(varchar(1))) for function concat. Expected: concat(char(x), char(y)) , concat(array(E), E) E, concat(E, array(E)) E, concat(array(E)) E, concat(varchar) , concat(varbinary) ");
+                .hasMessage("line 1:18: Unexpected parameters (array(array(integer)), array(varchar(1))) for function concat. Expected: concat(char(x), char(y)), concat(array(E), E) E, concat(E, array(E)) E, concat(array(E)) E, concat(varchar), concat(varbinary)");
 
         assertCachedInstanceHasBoundedRetainedSize("ARRAY [1, NULL] || 3");
         assertCachedInstanceHasBoundedRetainedSize("3 || ARRAY [1, NULL]");
@@ -560,7 +561,7 @@ public class TestArrayOperators
         assertFunction("ARRAY_JOIN(ARRAY [1.0, 2.1, 3.3], 'x')", VARCHAR, "1.0x2.1x3.3");
         assertFunction("ARRAY_JOIN(ARRAY [1.0, 2.100, 3.3], 'x')", VARCHAR, "1.000x2.100x3.300");
         assertFunction("ARRAY_JOIN(ARRAY [1.0, 2.100, NULL], 'x', 'N/A')", VARCHAR, "1.000x2.100xN/A");
-        assertFunction("ARRAY_JOIN(ARRAY [1.0, DOUBLE '002.100', 3.3], 'x')", VARCHAR, "1.0x2.1x3.3");
+        assertFunction("ARRAY_JOIN(ARRAY [1.0, DOUBLE '002.100', 3.3], 'x')", VARCHAR, "1.0E0x2.1E0x3.3E0");
 
         assertInvalidFunction("ARRAY_JOIN(ARRAY [ARRAY [1], ARRAY [2]], '-')", FUNCTION_NOT_FOUND);
         assertInvalidFunction("ARRAY_JOIN(ARRAY [MAP(ARRAY [1], ARRAY [2])], '-')", FUNCTION_NOT_FOUND);

@@ -166,16 +166,19 @@ public final class IcebergUtil
     public static List<IcebergColumnHandle> getColumns(Schema schema, TypeManager typeManager)
     {
         return schema.columns().stream()
-                .map(column -> {
-                    Type type = toTrinoType(column.type(), typeManager);
-                    return new IcebergColumnHandle(
-                            createColumnIdentity(column),
-                            type,
-                            ImmutableList.of(),
-                            type,
-                            Optional.ofNullable(column.doc()));
-                })
+                .map(column -> getColumnHandle(column, typeManager))
                 .collect(toImmutableList());
+    }
+
+    public static IcebergColumnHandle getColumnHandle(NestedField column, TypeManager typeManager)
+    {
+        Type type = toTrinoType(column.type(), typeManager);
+        return new IcebergColumnHandle(
+                createColumnIdentity(column),
+                type,
+                ImmutableList.of(),
+                type,
+                Optional.ofNullable(column.doc()));
     }
 
     public static Map<PartitionField, Integer> getIdentityPartitions(PartitionSpec partitionSpec)
@@ -188,7 +191,7 @@ public final class IcebergUtil
                 columns.put(field, i);
             }
         }
-        return columns.build();
+        return columns.buildOrThrow();
     }
 
     public static Map<Integer, PrimitiveType> primitiveFieldTypes(Schema schema)
@@ -324,8 +327,11 @@ public final class IcebergUtil
      */
     public static Map<Integer, Optional<String>> getPartitionKeys(FileScanTask scanTask)
     {
-        StructLike partition = scanTask.file().partition();
-        PartitionSpec spec = scanTask.spec();
+        return getPartitionKeys(scanTask.file().partition(), scanTask.spec());
+    }
+
+    public static Map<Integer, Optional<String>> getPartitionKeys(StructLike partition, PartitionSpec spec)
+    {
         Map<PartitionField, Integer> fieldToIndex = getIdentityPartitions(spec);
         ImmutableMap.Builder<Integer, Optional<String>> partitionKeys = ImmutableMap.builder();
 
@@ -351,7 +357,7 @@ public final class IcebergUtil
             }
         });
 
-        return partitionKeys.build();
+        return partitionKeys.buildOrThrow();
     }
 
     public static LocationProvider getLocationProvider(SchemaTableName schemaTableName, String tableLocation, Map<String, String> storageProperties)
@@ -395,6 +401,6 @@ public final class IcebergUtil
             propertiesBuilder.put(TABLE_COMMENT, tableMetadata.getComment().get());
         }
 
-        return catalog.newCreateTableTransaction(session, schemaTableName, schema, partitionSpec, targetPath, propertiesBuilder.build());
+        return catalog.newCreateTableTransaction(session, schemaTableName, schema, partitionSpec, targetPath, propertiesBuilder.buildOrThrow());
     }
 }

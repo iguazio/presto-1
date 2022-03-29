@@ -373,7 +373,7 @@ public class BridgingHiveMetastore
             Partition partition = partitionValuesToPartitionMap.get(entry.getValue());
             resultBuilder.put(entry.getKey(), Optional.ofNullable(partition));
         }
-        return resultBuilder.build();
+        return resultBuilder.buildOrThrow();
     }
 
     private Partition fromMetastoreApiPartition(Table table, org.apache.hadoop.hive.metastore.api.Partition partition)
@@ -488,6 +488,12 @@ public class BridgingHiveMetastore
     public void commitTransaction(HiveIdentity identity, long transactionId)
     {
         delegate.commitTransaction(identity, transactionId);
+    }
+
+    @Override
+    public void abortTransaction(HiveIdentity identity, long transactionId)
+    {
+        delegate.abortTransaction(identity, transactionId);
     }
 
     @Override

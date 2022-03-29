@@ -101,7 +101,7 @@ public class PruneTableScanColumns
                 builder.put(newOutputs.get(i), assignments.get(variable.getName()));
             }
 
-            newAssignments = builder.build();
+            newAssignments = builder.buildOrThrow();
         }
         else {
             // IG-19292

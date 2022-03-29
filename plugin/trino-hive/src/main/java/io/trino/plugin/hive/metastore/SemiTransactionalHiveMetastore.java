@@ -301,7 +301,7 @@ public class SemiTransactionalHiveMetastore
         else {
             partitionNamesToQuery.build().forEach(partitionName -> resultBuilder.put(partitionName, PartitionStatistics.empty()));
         }
-        return resultBuilder.build();
+        return resultBuilder.buildOrThrow();
     }
 
     /**
@@ -351,7 +351,7 @@ public class SemiTransactionalHiveMetastore
             for (Map.Entry<List<String>, Action<PartitionAndMore>> entry : partitionActionMap.entrySet()) {
                 modifiedPartitionMapBuilder.put(entry.getKey(), getPartitionFromPartitionAction(entry.getValue()));
             }
-            modifiedPartitionMap = modifiedPartitionMapBuilder.build();
+            modifiedPartitionMap = modifiedPartitionMapBuilder.buildOrThrow();
         }
         return new HivePageSinkMetadata(
                 schemaTableName,
@@ -389,7 +389,7 @@ public class SemiTransactionalHiveMetastore
             boolean deleteData = location.map(path -> {
                 HdfsContext context = new HdfsContext(session);
                 try (FileSystem fs = hdfsEnvironment.getFileSystem(context, path)) {
-                    return !fs.listFiles(path, false).hasNext();
+                    return !fs.listLocatedStatus(path).hasNext();
                 }
                 catch (IOException | RuntimeException e) {
                     log.warn(e, "Could not check schema directory '%s'", path);
@@ -905,7 +905,7 @@ public class SemiTransactionalHiveMetastore
             resultBuilder.putAll(delegateResult);
         }
 
-        return resultBuilder.build();
+        return resultBuilder.buildOrThrow();
     }
 
     private static Optional<Partition> getPartitionFromPartitionAction(Action<PartitionAndMore> partitionAction)
@@ -1375,15 +1375,37 @@ public class SemiTransactionalHiveMetastore
             return;
         }
 
-        commit();
+        try {
+            commit();
+        }
+        catch (Throwable commitFailure) {
+            try {
+                postCommitCleanup(identity, transaction, false);
+            }
+            catch (Throwable cleanupFailure) {
+                if (cleanupFailure != commitFailure) {
+                    commitFailure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw commitFailure;
+        }
+        postCommitCleanup(identity, transaction, true);
+    }
 
+    private void postCommitCleanup(HiveIdentity identity, Optional<HiveTransaction> transaction, boolean commit)
+    {
         clearCurrentTransaction();
         long transactionId = transaction.get().getTransactionId();
         ScheduledFuture<?> heartbeatTask = transaction.get().getHeartbeatTask();
         heartbeatTask.cancel(true);
 
-        // Any failure around aborted transactions, etc would be handled by Hive Metastore commit and TrinoException will be thrown
-        delegate.commitTransaction(identity, transactionId);
+        if (commit) {
+            // Any failure around aborted transactions, etc would be handled by Hive Metastore commit and TrinoException will be thrown
+            delegate.commitTransaction(identity, transactionId);
+        }
+        else {
+            delegate.abortTransaction(identity, transactionId);
+        }
     }
 
     @GuardedBy("this")

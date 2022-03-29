@@ -21,17 +21,20 @@ import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.testing.TestingHttpClient;
 import io.airlift.node.NodeInfo;
 import io.trino.FeaturesConfig;
+import io.trino.exchange.ExchangeManagerRegistry;
 import io.trino.execution.Lifespan;
 import io.trino.execution.StageId;
 import io.trino.execution.TaskId;
 import io.trino.execution.buffer.PagesSerdeFactory;
 import io.trino.execution.buffer.TestingPagesSerdeFactory;
+import io.trino.metadata.ExchangeHandleResolver;
 import io.trino.metadata.Split;
 import io.trino.spi.Page;
 import io.trino.spi.connector.SortOrder;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeOperators;
 import io.trino.split.RemoteSplit;
+import io.trino.split.RemoteSplit.DirectExchangeInput;
 import io.trino.sql.gen.OrderingCompiler;
 import io.trino.sql.planner.plan.PlanNodeId;
 import org.testng.annotations.AfterMethod;
@@ -51,6 +54,7 @@ import static io.trino.SessionTestUtils.TEST_SESSION;
 import static io.trino.operator.OperatorAssertion.assertOperatorIsBlocked;
 import static io.trino.operator.OperatorAssertion.assertOperatorIsUnblocked;
 import static io.trino.operator.PageAssertions.assertPageEquals;
+import static io.trino.plugin.base.cache.SafeCaches.buildNonEvictableCache;
 import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.spi.connector.SortOrder.DESC_NULLS_FIRST;
 import static io.trino.spi.type.BigintType.BIGINT;
@@ -73,7 +77,7 @@ public class TestMergeOperator
     private ScheduledExecutorService executor;
     private PagesSerdeFactory serdeFactory;
     private HttpClient httpClient;
-    private ExchangeClientFactory exchangeClientFactory;
+    private DirectExchangeClientFactory exchangeClientFactory;
     private OrderingCompiler orderingCompiler;
 
     private LoadingCache<TaskId, TestingTaskBuffer> taskBuffers;
@@ -84,9 +88,15 @@ public class TestMergeOperator
         executor = newSingleThreadScheduledExecutor(daemonThreadsNamed("test-merge-operator-%s"));
         serdeFactory = new TestingPagesSerdeFactory();
 
-        taskBuffers = CacheBuilder.newBuilder().build(CacheLoader.from(TestingTaskBuffer::new));
+        taskBuffers = buildNonEvictableCache(CacheBuilder.newBuilder(), CacheLoader.from(TestingTaskBuffer::new));
         httpClient = new TestingHttpClient(new TestingExchangeHttpClientHandler(taskBuffers), executor);
-        exchangeClientFactory = new ExchangeClientFactory(new NodeInfo("test"), new FeaturesConfig(), new ExchangeClientConfig(), httpClient, executor);
+        exchangeClientFactory = new DirectExchangeClientFactory(
+                new NodeInfo("test"),
+                new FeaturesConfig(),
+                new DirectExchangeClientConfig(),
+                httpClient,
+                executor,
+                new ExchangeManagerRegistry(new ExchangeHandleResolver()));
         orderingCompiler = new OrderingCompiler(new TypeOperators());
     }
 
@@ -354,7 +364,7 @@ public class TestMergeOperator
 
     private static Split createRemoteSplit(TaskId taskId)
     {
-        return new Split(ExchangeOperator.REMOTE_CONNECTOR_ID, new RemoteSplit(taskId, "http://localhost/" + taskId), Lifespan.taskWide());
+        return new Split(ExchangeOperator.REMOTE_CONNECTOR_ID, new RemoteSplit(new DirectExchangeInput(taskId, "http://localhost/" + taskId)), Lifespan.taskWide());
     }
 
     private static List<Page> pullAvailablePages(Operator operator)

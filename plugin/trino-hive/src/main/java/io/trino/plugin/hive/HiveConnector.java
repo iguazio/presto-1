@@ -21,7 +21,6 @@ import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.spi.classloader.ThreadContextClassLoader;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorAccessControl;
-import io.trino.spi.connector.ConnectorHandleResolver;
 import io.trino.spi.connector.ConnectorMetadata;
 import io.trino.spi.connector.ConnectorNodePartitioningProvider;
 import io.trino.spi.connector.ConnectorPageSinkProvider;
@@ -66,6 +65,7 @@ public class HiveConnector
     private final ClassLoader classLoader;
 
     private final HiveTransactionManager transactionManager;
+    private final boolean singleStatementWritesOnly;
 
     public HiveConnector(
             LifeCycleManager lifeCycleManager,
@@ -84,6 +84,7 @@ public class HiveConnector
             List<PropertyMetadata<?>> analyzeProperties,
             List<PropertyMetadata<?>> materializedViewProperties,
             Optional<ConnectorAccessControl> accessControl,
+            boolean singleStatementWritesOnly,
             ClassLoader classLoader)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
@@ -104,13 +105,8 @@ public class HiveConnector
         this.analyzeProperties = ImmutableList.copyOf(requireNonNull(analyzeProperties, "analyzeProperties is null"));
         this.materializedViewProperties = requireNonNull(materializedViewProperties, "materializedViewProperties is null");
         this.accessControl = requireNonNull(accessControl, "accessControl is null");
+        this.singleStatementWritesOnly = singleStatementWritesOnly;
         this.classLoader = requireNonNull(classLoader, "classLoader is null");
-    }
-
-    @Override
-    public Optional<ConnectorHandleResolver> getHandleResolver()
-    {
-        return Optional.of(new HiveHandleResolver());
     }
 
     @Override
@@ -196,7 +192,7 @@ public class HiveConnector
     @Override
     public boolean isSingleStatementWritesOnly()
     {
-        return false;
+        return singleStatementWritesOnly;
     }
 
     @Override

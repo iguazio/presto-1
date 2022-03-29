@@ -70,7 +70,6 @@ import io.trino.spi.connector.ConnectorBucketNodeMap;
 import io.trino.spi.connector.ConnectorInsertTableHandle;
 import io.trino.spi.connector.ConnectorMaterializedViewDefinition;
 import io.trino.spi.connector.ConnectorMetadata;
-import io.trino.spi.connector.ConnectorNewTableLayout;
 import io.trino.spi.connector.ConnectorNodePartitioningProvider;
 import io.trino.spi.connector.ConnectorOutputTableHandle;
 import io.trino.spi.connector.ConnectorPageSink;
@@ -83,6 +82,7 @@ import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
 import io.trino.spi.connector.ConnectorTableHandle;
+import io.trino.spi.connector.ConnectorTableLayout;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.ConnectorTransactionHandle;
@@ -227,6 +227,7 @@ import static io.trino.plugin.hive.HiveTableProperties.BUCKET_COUNT_PROPERTY;
 import static io.trino.plugin.hive.HiveTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTableProperties.SORTED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTableProperties.STORAGE_FORMAT_PROPERTY;
+import static io.trino.plugin.hive.HiveTableProperties.TRANSACTIONAL;
 import static io.trino.plugin.hive.HiveTableRedirectionsProvider.NO_REDIRECTIONS;
 import static io.trino.plugin.hive.HiveTestUtils.PAGE_SORTER;
 import static io.trino.plugin.hive.HiveTestUtils.SESSION;
@@ -259,6 +260,8 @@ import static io.trino.plugin.hive.metastore.StorageFormat.fromHiveStorageFormat
 import static io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.cachingHiveMetastore;
 import static io.trino.plugin.hive.util.HiveBucketing.BucketingVersion.BUCKETING_V1;
 import static io.trino.plugin.hive.util.HiveUtil.DELTA_LAKE_PROVIDER;
+import static io.trino.plugin.hive.util.HiveUtil.ICEBERG_TABLE_TYPE_NAME;
+import static io.trino.plugin.hive.util.HiveUtil.ICEBERG_TABLE_TYPE_VALUE;
 import static io.trino.plugin.hive.util.HiveUtil.SPARK_TABLE_PROVIDER_KEY;
 import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
 import static io.trino.plugin.hive.util.HiveUtil.toPartitionValues;
@@ -547,7 +550,7 @@ public abstract class AbstractTestHive
                             .put("t_timestamp", createIntegerColumnStatistics(OptionalLong.of(1234567L), OptionalLong.of(71234567L), OptionalLong.of(7), OptionalLong.of(5)))
                             .put("t_short_decimal", createDecimalColumnStatistics(Optional.of(new BigDecimal(10)), Optional.of(new BigDecimal(12)), OptionalLong.of(3), OptionalLong.of(5)))
                             .put("t_long_decimal", createDecimalColumnStatistics(Optional.of(new BigDecimal("12345678901234567.123")), Optional.of(new BigDecimal("81234567890123456.123")), OptionalLong.of(2), OptionalLong.of(1)))
-                            .build());
+                            .buildOrThrow());
 
     protected static final PartitionStatistics STATISTICS_1_1 =
             new PartitionStatistics(
@@ -584,7 +587,7 @@ public abstract class AbstractTestHive
                             .put("t_timestamp", createIntegerColumnStatistics(OptionalLong.of(2345671L), OptionalLong.of(12345677L), OptionalLong.of(9), OptionalLong.of(1)))
                             .put("t_short_decimal", createDecimalColumnStatistics(Optional.of(new BigDecimal(11)), Optional.of(new BigDecimal(14)), OptionalLong.of(5), OptionalLong.of(7)))
                             .put("t_long_decimal", createDecimalColumnStatistics(Optional.of(new BigDecimal("71234567890123456.123")), Optional.of(new BigDecimal("78123456789012345.123")), OptionalLong.of(2), OptionalLong.of(1)))
-                            .build());
+                            .buildOrThrow());
 
     private static final PartitionStatistics STATISTICS_EMPTY_OPTIONAL_FIELDS =
             new PartitionStatistics(
@@ -606,7 +609,7 @@ public abstract class AbstractTestHive
                             .put("t_timestamp", createIntegerColumnStatistics(OptionalLong.empty(), OptionalLong.empty(), OptionalLong.of(9), OptionalLong.of(1)))
                             .put("t_short_decimal", createDecimalColumnStatistics(Optional.empty(), Optional.empty(), OptionalLong.of(5), OptionalLong.of(7)))
                             .put("t_long_decimal", createDecimalColumnStatistics(Optional.empty(), Optional.empty(), OptionalLong.of(2), OptionalLong.of(1)))
-                            .build());
+                            .buildOrThrow());
 
     protected String database;
     protected SchemaTableName tablePartitionFormat;
@@ -715,28 +718,28 @@ public abstract class AbstractTestHive
                                 .put(dsColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("2012-12-29")))
                                 .put(fileFormatColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("textfile")))
                                 .put(dummyColumn, NullableValue.of(INTEGER, 1L))
-                                .build()))
+                                .buildOrThrow()))
                 .add(new HivePartition(tablePartitionFormat,
                         "ds=2012-12-29/file_format=sequencefile/dummy=2",
                         ImmutableMap.<ColumnHandle, NullableValue>builder()
                                 .put(dsColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("2012-12-29")))
                                 .put(fileFormatColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("sequencefile")))
                                 .put(dummyColumn, NullableValue.of(INTEGER, 2L))
-                                .build()))
+                                .buildOrThrow()))
                 .add(new HivePartition(tablePartitionFormat,
                         "ds=2012-12-29/file_format=rctext/dummy=3",
                         ImmutableMap.<ColumnHandle, NullableValue>builder()
                                 .put(dsColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("2012-12-29")))
                                 .put(fileFormatColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("rctext")))
                                 .put(dummyColumn, NullableValue.of(INTEGER, 3L))
-                                .build()))
+                                .buildOrThrow()))
                 .add(new HivePartition(tablePartitionFormat,
                         "ds=2012-12-29/file_format=rcbinary/dummy=4",
                         ImmutableMap.<ColumnHandle, NullableValue>builder()
                                 .put(dsColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("2012-12-29")))
                                 .put(fileFormatColumn, NullableValue.of(createUnboundedVarcharType(), utf8Slice("rcbinary")))
                                 .put(dummyColumn, NullableValue.of(INTEGER, 4L))
-                                .build()))
+                                .buildOrThrow()))
                 .build();
         tableUnpartitionedPartitions = ImmutableList.of(new HivePartition(tableUnpartitioned));
         tablePartitionFormatProperties = new ConnectorTableProperties(
@@ -838,7 +841,7 @@ public abstract class AbstractTestHive
                             TupleDomain.all()));
                 },
                 ImmutableSet.of(
-                        new PartitionsSystemTableProvider(partitionManager),
+                        new PartitionsSystemTableProvider(partitionManager, TESTING_TYPE_MANAGER),
                         new PropertiesSystemTableProvider()),
                 (metastore) -> new NoneHiveMaterializedViewMetadata()
                 {
@@ -1591,7 +1594,7 @@ public abstract class AbstractTestHive
                     .put(columnHandles.get(columnIndex.get("t_int")), NullableValue.of(INTEGER, (long) testInt))
                     .put(columnHandles.get(columnIndex.get("t_string")), NullableValue.of(createUnboundedVarcharType(), utf8Slice(testString)))
                     .put(columnHandles.get(columnIndex.get("t_smallint")), NullableValue.of(SMALLINT, (long) testSmallint))
-                    .build();
+                    .buildOrThrow();
 
             MaterializedResult result = readTable(transaction, tableHandle, columnHandles, session, TupleDomain.fromFixedValues(bindings), OptionalInt.of(1), Optional.empty());
 
@@ -1637,7 +1640,7 @@ public abstract class AbstractTestHive
                     .put(columnHandles.get(columnIndex.get("t_string")), NullableValue.of(createUnboundedVarcharType(), utf8Slice(testString)))
                     .put(columnHandles.get(columnIndex.get("t_bigint")), NullableValue.of(BIGINT, testBigint))
                     .put(columnHandles.get(columnIndex.get("t_boolean")), NullableValue.of(BOOLEAN, testBoolean))
-                    .build();
+                    .buildOrThrow();
 
             MaterializedResult result = readTable(transaction, tableHandle, columnHandles, session, TupleDomain.fromFixedValues(bindings), OptionalInt.of(1), Optional.empty());
 
@@ -1672,7 +1675,7 @@ public abstract class AbstractTestHive
             ImmutableMap<ColumnHandle, NullableValue> bindings = ImmutableMap.<ColumnHandle, NullableValue>builder()
                     .put(columnHandles.get(columnIndex.get("t_float")), NullableValue.of(REAL, (long) floatToRawIntBits(87.1f)))
                     .put(columnHandles.get(columnIndex.get("t_double")), NullableValue.of(DOUBLE, 88.2))
-                    .build();
+                    .buildOrThrow();
 
             // floats and doubles are not supported, so we should see all splits
             MaterializedResult result = readTable(transaction, tableHandle, columnHandles, session, TupleDomain.fromFixedValues(bindings), OptionalInt.of(32), Optional.empty());
@@ -2594,7 +2597,7 @@ public abstract class AbstractTestHive
                                     .add(new SortingColumn("value_asc", ASCENDING))
                                     .add(new SortingColumn("value_desc", DESCENDING))
                                     .build())
-                            .build());
+                            .buildOrThrow());
 
             ConnectorOutputTableHandle outputHandle = metadata.beginCreateTable(session, tableMetadata, Optional.empty(), NO_RETRIES);
 
@@ -2898,22 +2901,14 @@ public abstract class AbstractTestHive
                         .hasMessage(format("Cannot query Delta Lake table '%s'", tableName));
             }
 
-            // Verify the hidden `$properties` Delta Lake table handle can't be obtained within the hive connector
-            SchemaTableName propertiesTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$properties", tableName.getTableName()));
+            // Verify the hidden `$properties` and `$partitions` Delta Lake table handle can't be obtained within the hive connector
             try (Transaction transaction = newTransaction()) {
                 ConnectorMetadata metadata = transaction.getMetadata();
                 metadata.beginQuery(session);
-                assertThatThrownBy(() -> metadata.getSystemTable(newSession(), propertiesTableName))
-                        .hasMessage(format("Cannot query Delta Lake table '%s'", tableName));
-            }
-
-            // Verify the hidden `$partitions` Delta Lake table handle can't be obtained within the hive connector
-            SchemaTableName partitionsTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$partitions", tableName.getTableName()));
-            try (Transaction transaction = newTransaction()) {
-                ConnectorMetadata metadata = transaction.getMetadata();
-                metadata.beginQuery(session);
-                assertThatThrownBy(() -> metadata.getSystemTable(newSession(), partitionsTableName))
-                        .hasMessage(format("Cannot query Delta Lake table '%s'", tableName));
+                SchemaTableName propertiesTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$properties", tableName.getTableName()));
+                assertThat(metadata.getSystemTable(newSession(), propertiesTableName)).isEmpty();
+                SchemaTableName partitionsTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$partitions", tableName.getTableName()));
+                assertThat(metadata.getSystemTable(newSession(), partitionsTableName)).isEmpty();
             }
 
             // Assert that table is hidden
@@ -2942,6 +2937,56 @@ public abstract class AbstractTestHive
                 // list all columns in a table
                 assertThat(listTableColumns(metadata, session, new SchemaTablePrefix(tableName.getSchemaName(), tableName.getTableName())).keySet())
                         .doesNotContain(tableName);
+            }
+        }
+        finally {
+            // Clean up
+            metastoreClient.dropTable(identity, tableName.getSchemaName(), tableName.getTableName(), true);
+        }
+    }
+
+    @Test
+    public void testDisallowQueryingOfIcebergTables()
+    {
+        ConnectorSession session = newSession();
+        HiveIdentity identity = new HiveIdentity(session);
+        SchemaTableName tableName = temporaryTable("trino_iceberg_table");
+
+        Table.Builder table = Table.builder()
+                .setDatabaseName(tableName.getSchemaName())
+                .setTableName(tableName.getTableName())
+                .setOwner(Optional.of(session.getUser()))
+                .setTableType(MANAGED_TABLE.name())
+                .setPartitionColumns(List.of(new Column("a_partition_column", HIVE_INT, Optional.empty())))
+                .setDataColumns(List.of(new Column("a_column", HIVE_STRING, Optional.empty())))
+                .setParameter(ICEBERG_TABLE_TYPE_NAME, ICEBERG_TABLE_TYPE_VALUE);
+        table.getStorageBuilder()
+                .setStorageFormat(fromHiveStorageFormat(PARQUET))
+                .setLocation(getTableDefaultLocation(
+                        metastoreClient.getDatabase(tableName.getSchemaName()).orElseThrow(),
+                        new HdfsContext(session.getIdentity()),
+                        hdfsEnvironment,
+                        tableName.getSchemaName(),
+                        tableName.getTableName()).toString());
+        metastoreClient.createTable(identity, table.build(), NO_PRIVILEGES);
+
+        try {
+            // Verify that the table was created as a Iceberg table can't be queried in hive
+            try (Transaction transaction = newTransaction()) {
+                ConnectorMetadata metadata = transaction.getMetadata();
+                metadata.beginQuery(session);
+                assertThatThrownBy(() -> getTableHandle(metadata, tableName))
+                        .hasMessage(format("Cannot query Iceberg table '%s'", tableName));
+            }
+
+            // Verify the hidden `$properties` and `$partitions` hive system tables table handle can't be obtained for the Iceberg tables
+            try (Transaction transaction = newTransaction()) {
+                ConnectorMetadata metadata = transaction.getMetadata();
+                metadata.beginQuery(session);
+                SchemaTableName propertiesTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$properties", tableName.getTableName()));
+                assertThat(metadata.getSystemTable(newSession(), propertiesTableName)).isEmpty();
+                SchemaTableName partitionsTableName = new SchemaTableName(tableName.getSchemaName(), format("%s$partitions", tableName.getTableName()));
+                assertThat(metadata.getSystemTable(newSession(), partitionsTableName)).isEmpty();
             }
         }
         finally {
@@ -3470,7 +3515,7 @@ public abstract class AbstractTestHive
             inputAssignments = ImmutableMap.<String, ColumnHandle>builder()
                     .putAll(getColumnHandlesFor(columnHandlesWithSymbols, ImmutableList.of("symbol_2")))
                     .put(newlyCreatedColumn.getVariable(), newlyCreatedColumn.getColumn())
-                    .build();
+                    .buildOrThrow();
             inputProjections = ImmutableList.of(symbol2Field0, new Variable("onelevelrow0#f_int0", BIGINT));
             projectionResult = metadata.applyProjection(session, tableHandle, inputProjections, inputAssignments);
             expectedProjections = ImmutableList.of(new Variable("onelevelrow0#f_int0", BIGINT), new Variable("onelevelrow0#f_int0", BIGINT));
@@ -5036,7 +5081,7 @@ public abstract class AbstractTestHive
             index.put(hiveColumnHandle.getName(), i);
             i++;
         }
-        return index.build();
+        return index.buildOrThrow();
     }
 
     protected static ImmutableMap<String, Integer> indexColumns(ConnectorTableMetadata tableMetadata)
@@ -5047,7 +5092,7 @@ public abstract class AbstractTestHive
             index.put(columnMetadata.getName(), i);
             i++;
         }
-        return index.build();
+        return index.buildOrThrow();
     }
 
     protected SchemaTableName temporaryTable(String tableName)
@@ -5074,7 +5119,7 @@ public abstract class AbstractTestHive
                 .put(BUCKETED_BY_PROPERTY, ImmutableList.of())
                 .put(BUCKET_COUNT_PROPERTY, 0)
                 .put(SORTED_BY_PROPERTY, ImmutableList.of())
-                .build();
+                .buildOrThrow();
     }
 
     protected static List<ColumnHandle> filterNonHiddenColumnHandles(Collection<ColumnHandle> columnHandles)
@@ -5094,10 +5139,27 @@ public abstract class AbstractTestHive
     private void createEmptyTable(SchemaTableName schemaTableName, HiveStorageFormat hiveStorageFormat, List<Column> columns, List<Column> partitionColumns)
             throws Exception
     {
-        createEmptyTable(schemaTableName, hiveStorageFormat, columns, partitionColumns, Optional.empty());
+        createEmptyTable(schemaTableName, hiveStorageFormat, columns, partitionColumns, Optional.empty(), false);
     }
 
-    private void createEmptyTable(SchemaTableName schemaTableName, HiveStorageFormat hiveStorageFormat, List<Column> columns, List<Column> partitionColumns, Optional<HiveBucketProperty> bucketProperty)
+    private void createEmptyTable(
+            SchemaTableName schemaTableName,
+            HiveStorageFormat hiveStorageFormat,
+            List<Column> columns,
+            List<Column> partitionColumns,
+            Optional<HiveBucketProperty> bucketProperty)
+            throws Exception
+    {
+        createEmptyTable(schemaTableName, hiveStorageFormat, columns, partitionColumns, bucketProperty, false);
+    }
+
+    protected void createEmptyTable(
+            SchemaTableName schemaTableName,
+            HiveStorageFormat hiveStorageFormat,
+            List<Column> columns,
+            List<Column> partitionColumns,
+            Optional<HiveBucketProperty> bucketProperty,
+            boolean isTransactional)
             throws Exception
     {
         Path targetPath;
@@ -5113,20 +5175,24 @@ public abstract class AbstractTestHive
             LocationHandle locationHandle = locationService.forNewTable(transaction.getMetastore(), session, schemaName, tableName, Optional.empty());
             targetPath = locationService.getQueryWriteInfo(locationHandle).getTargetPath();
 
+            ImmutableMap.Builder<String, String> tableParamBuilder = ImmutableMap.<String, String>builder()
+                    .put(PRESTO_VERSION_NAME, TEST_SERVER_VERSION)
+                    .put(PRESTO_QUERY_ID_NAME, session.getQueryId());
+            if (isTransactional) {
+                tableParamBuilder.put(TRANSACTIONAL, "true");
+            }
             Table.Builder tableBuilder = Table.builder()
                     .setDatabaseName(schemaName)
                     .setTableName(tableName)
                     .setOwner(Optional.of(tableOwner))
                     .setTableType(TableType.MANAGED_TABLE.name())
-                    .setParameters(ImmutableMap.of(
-                            PRESTO_VERSION_NAME, TEST_SERVER_VERSION,
-                            PRESTO_QUERY_ID_NAME, session.getQueryId()))
+                    .setParameters(tableParamBuilder.buildOrThrow())
                     .setDataColumns(columns)
                     .setPartitionColumns(partitionColumns);
 
             tableBuilder.getStorageBuilder()
                     .setLocation(targetPath.toString())
-                    .setStorageFormat(StorageFormat.create(hiveStorageFormat.getSerDe(), hiveStorageFormat.getInputFormat(), hiveStorageFormat.getOutputFormat()))
+                    .setStorageFormat(StorageFormat.create(hiveStorageFormat.getSerde(), hiveStorageFormat.getInputFormat(), hiveStorageFormat.getOutputFormat()))
                     .setBucketProperty(bucketProperty)
                     .setSerdeParameters(ImmutableMap.of());
 
@@ -5227,7 +5293,7 @@ public abstract class AbstractTestHive
                 ConnectorMetadata metadata = transaction.getMetadata();
                 ConnectorSession session = newSession();
                 ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
-                Optional<ConnectorNewTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
+                Optional<ConnectorTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
                 assertTrue(insertLayout.isPresent());
                 assertFalse(insertLayout.get().getPartitioning().isPresent());
                 assertEquals(insertLayout.get().getPartitionColumns(), ImmutableList.of(partitioningColumn.getName()));
@@ -5242,19 +5308,32 @@ public abstract class AbstractTestHive
     public void testInsertBucketedTableLayout()
             throws Exception
     {
+        insertBucketedTableLayout(false);
+    }
+
+    @Test
+    public void testInsertBucketedTransactionalTableLayout()
+            throws Exception
+    {
+        insertBucketedTableLayout(true);
+    }
+
+    protected void insertBucketedTableLayout(boolean transactional)
+            throws Exception
+    {
         SchemaTableName tableName = temporaryTable("empty_bucketed_table");
         try {
             List<Column> columns = ImmutableList.of(
                     new Column("column1", HIVE_STRING, Optional.empty()),
                     new Column("column2", HIVE_LONG, Optional.empty()));
             HiveBucketProperty bucketProperty = new HiveBucketProperty(ImmutableList.of("column1"), BUCKETING_V1, 4, ImmutableList.of());
-            createEmptyTable(tableName, ORC, columns, ImmutableList.of(), Optional.of(bucketProperty));
+            createEmptyTable(tableName, ORC, columns, ImmutableList.of(), Optional.of(bucketProperty), transactional);
 
             try (Transaction transaction = newTransaction()) {
                 ConnectorMetadata metadata = transaction.getMetadata();
                 ConnectorSession session = newSession();
                 ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
-                Optional<ConnectorNewTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
+                Optional<ConnectorTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
                 assertTrue(insertLayout.isPresent());
                 ConnectorPartitioningHandle partitioningHandle = new HivePartitioningHandle(
                         bucketProperty.getBucketingVersion(),
@@ -5278,6 +5357,19 @@ public abstract class AbstractTestHive
     public void testInsertPartitionedBucketedTableLayout()
             throws Exception
     {
+        insertPartitionedBucketedTableLayout(false);
+    }
+
+    @Test
+    public void testInsertPartitionedBucketedTransactionalTableLayout()
+            throws Exception
+    {
+        insertPartitionedBucketedTableLayout(true);
+    }
+
+    protected void insertPartitionedBucketedTableLayout(boolean transactional)
+            throws Exception
+    {
         SchemaTableName tableName = temporaryTable("empty_partitioned_table");
         try {
             Column partitioningColumn = new Column("column2", HIVE_LONG, Optional.empty());
@@ -5285,13 +5377,13 @@ public abstract class AbstractTestHive
                     new Column("column1", HIVE_STRING, Optional.empty()),
                     partitioningColumn);
             HiveBucketProperty bucketProperty = new HiveBucketProperty(ImmutableList.of("column1"), BUCKETING_V1, 4, ImmutableList.of());
-            createEmptyTable(tableName, ORC, columns, ImmutableList.of(partitioningColumn), Optional.of(bucketProperty));
+            createEmptyTable(tableName, ORC, columns, ImmutableList.of(partitioningColumn), Optional.of(bucketProperty), transactional);
 
             try (Transaction transaction = newTransaction()) {
                 ConnectorMetadata metadata = transaction.getMetadata();
                 ConnectorSession session = newSession();
                 ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
-                Optional<ConnectorNewTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
+                Optional<ConnectorTableLayout> insertLayout = metadata.getInsertLayout(session, tableHandle);
                 assertTrue(insertLayout.isPresent());
                 ConnectorPartitioningHandle partitioningHandle = new HivePartitioningHandle(
                         bucketProperty.getBucketingVersion(),
@@ -5318,7 +5410,7 @@ public abstract class AbstractTestHive
         try (Transaction transaction = newTransaction()) {
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorSession session = newSession();
-            Optional<ConnectorNewTableLayout> newTableLayout = metadata.getNewTableLayout(
+            Optional<ConnectorTableLayout> newTableLayout = metadata.getNewTableLayout(
                     session,
                     new ConnectorTableMetadata(
                             new SchemaTableName("schema", "table"),
@@ -5342,7 +5434,7 @@ public abstract class AbstractTestHive
         try (Transaction transaction = newTransaction()) {
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorSession session = newSession();
-            Optional<ConnectorNewTableLayout> newTableLayout = metadata.getNewTableLayout(
+            Optional<ConnectorTableLayout> newTableLayout = metadata.getNewTableLayout(
                     session,
                     new ConnectorTableMetadata(
                             new SchemaTableName("schema", "table"),
@@ -5375,7 +5467,7 @@ public abstract class AbstractTestHive
         try (Transaction transaction = newTransaction()) {
             ConnectorMetadata metadata = transaction.getMetadata();
             ConnectorSession session = newSession();
-            Optional<ConnectorNewTableLayout> newTableLayout = metadata.getNewTableLayout(
+            Optional<ConnectorTableLayout> newTableLayout = metadata.getNewTableLayout(
                     session,
                     new ConnectorTableMetadata(
                             new SchemaTableName("schema", "table"),

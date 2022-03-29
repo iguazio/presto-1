@@ -31,7 +31,6 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.File;
-import java.net.URISyntaxException;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
@@ -312,6 +311,8 @@ public class TestFileBasedAccessControl
         accessControl.checkCanRenameView(ALICE, new SchemaTableName("aliceschema", "aliceview"), new SchemaTableName("aliceschema", "newaliceview"));
         accessControl.checkCanRenameMaterializedView(ADMIN, new SchemaTableName("bobschema", "bobmaterializedview"), new SchemaTableName("aliceschema", "newbobaterializedview"));
         accessControl.checkCanRenameMaterializedView(ALICE, new SchemaTableName("aliceschema", "alicevaterializediew"), new SchemaTableName("aliceschema", "newaliceaterializedview"));
+        accessControl.checkCanSetMaterializedViewProperties(ADMIN, new SchemaTableName("bobschema", "bobmaterializedview"), ImmutableMap.of());
+        accessControl.checkCanSetMaterializedViewProperties(ALICE, new SchemaTableName("aliceschema", "alicevaterializediew"), ImmutableMap.of());
 
         accessControl.checkCanSetTableProperties(ADMIN, bobTable, ImmutableMap.of());
         accessControl.checkCanSetTableProperties(ALICE, aliceTable, ImmutableMap.of());
@@ -329,6 +330,8 @@ public class TestFileBasedAccessControl
         assertDenied(() -> accessControl.checkCanRenameView(ALICE, aliceTable, new SchemaTableName("bobschema", "newalicetable")));
         assertDenied(() -> accessControl.checkCanRenameMaterializedView(BOB, new SchemaTableName("bobschema", "bobmaterializedview"), new SchemaTableName("bobschema", "newbobaterializedview")));
         assertDenied(() -> accessControl.checkCanRenameMaterializedView(ALICE, aliceTable, new SchemaTableName("bobschema", "newaliceaterializedview")));
+        assertDenied(() -> accessControl.checkCanSetMaterializedViewProperties(ALICE, new SchemaTableName("bobschema", "bobmaterializedview"), ImmutableMap.of()));
+        assertDenied(() -> accessControl.checkCanSetMaterializedViewProperties(BOB, new SchemaTableName("bobschema", "bobmaterializedview"), ImmutableMap.of()));
 
         accessControl.checkCanSetTableAuthorization(ADMIN, testTable, new TrinoPrincipal(PrincipalType.ROLE, "some_role"));
         accessControl.checkCanSetTableAuthorization(ADMIN, testTable, new TrinoPrincipal(PrincipalType.USER, "some_user"));
@@ -471,17 +474,10 @@ public class TestFileBasedAccessControl
                 new QueryId("query_id"));
     }
 
-    private ConnectorAccessControl createAccessControl(String fileName)
+    private static ConnectorAccessControl createAccessControl(String fileName)
     {
-        try {
-            String path = new File(getResource(fileName).toURI()).getPath();
-            FileBasedAccessControlConfig config = new FileBasedAccessControlConfig();
-            config.setConfigFile(path);
-            return new FileBasedAccessControl(new CatalogName("test_catalog"), config);
-        }
-        catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
+        File configFile = new File(getResource(fileName).getPath());
+        return new FileBasedAccessControl(new CatalogName("test_catalog"), configFile);
     }
 
     private static void assertDenied(ThrowingRunnable runnable)

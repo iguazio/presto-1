@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.trino</groupId>
         <artifactId>trino-root</artifactId>
-        <version>368</version>
+        <version>370</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -300,6 +300,11 @@
         </dependency>
 
         <dependency>
+            <groupId>org.gaul</groupId>
+            <artifactId>modernizer-maven-annotations</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-core</artifactId>
         </dependency>
@@ -479,17 +484,6 @@
                         <version>${dep.plugin.surefire.version}</version>
                     </dependency>
                 </dependencies>
-            </plugin>
-
-            <plugin>
-                <groupId>org.gaul</groupId>
-                <artifactId>modernizer-maven-plugin</artifactId>
-                <configuration>
-                    <ignoreClassNamePatterns>
-                        <!-- we require certain org.testng.Assert methods be called via our Assert class, so that class needs to be allowed to call them -->
-                        <ignoreClassNamePattern>io/trino/testing/assertions/Assert</ignoreClassNamePattern>
-                    </ignoreClassNamePatterns>
-                </configuration>
             </plugin>
         </plugins>
     </build>

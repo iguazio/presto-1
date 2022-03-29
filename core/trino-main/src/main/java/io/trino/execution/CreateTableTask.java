@@ -73,7 +73,6 @@ import static io.trino.spi.StandardErrorCode.TABLE_ALREADY_EXISTS;
 import static io.trino.spi.StandardErrorCode.TABLE_NOT_FOUND;
 import static io.trino.spi.StandardErrorCode.TYPE_NOT_FOUND;
 import static io.trino.spi.connector.ConnectorCapabilities.NOT_NULL_COLUMN_CONSTRAINT;
-import static io.trino.sql.NodeUtils.mapFromProperties;
 import static io.trino.sql.ParameterUtils.parameterExtractor;
 import static io.trino.sql.analyzer.SemanticExceptions.semanticException;
 import static io.trino.sql.analyzer.TypeSignatureTranslator.toTypeSignature;
@@ -163,12 +162,9 @@ public class CreateTableTask
                 if (!column.isNullable() && !plannerContext.getMetadata().getConnectorCapabilities(session, catalogName).contains(NOT_NULL_COLUMN_CONSTRAINT)) {
                     throw semanticException(NOT_SUPPORTED, column, "Catalog '%s' does not support non-null column for column name '%s'", catalogName.getCatalogName(), column.getName());
                 }
-
-                Map<String, Expression> sqlProperties = mapFromProperties(column.getProperties());
                 Map<String, Object> columnProperties = columnPropertyManager.getProperties(
                         catalogName,
-                        tableName.getCatalogName(),
-                        sqlProperties,
+                        column.getProperties(),
                         session,
                         plannerContext,
                         accessControl,
@@ -247,26 +243,26 @@ public class CreateTableTask
                 throw new TrinoException(GENERIC_INTERNAL_ERROR, "Invalid TableElement: " + element.getClass().getName());
             }
         }
-
-        Map<String, Expression> sqlProperties = mapFromProperties(statement.getProperties());
         Map<String, Object> properties = tablePropertyManager.getProperties(
                 catalogName,
-                tableName.getCatalogName(),
-                sqlProperties,
+                statement.getProperties(),
                 session,
                 plannerContext,
                 accessControl,
                 parameterLookup,
                 true);
 
-        if (!disableSetPropertiesSecurityCheckForCreateDdl && !properties.isEmpty()) {
+        if (!disableSetPropertiesSecurityCheckForCreateDdl) {
             accessControl.checkCanCreateTable(session.toSecurityContext(), tableName, properties);
         }
         else {
             accessControl.checkCanCreateTable(session.toSecurityContext(), tableName);
         }
 
-        Map<String, Object> finalProperties = combineProperties(sqlProperties.keySet(), properties, inheritedProperties);
+        Set<String> specifiedPropertyKeys = statement.getProperties().stream()
+                .map(property -> property.getName().getValue())
+                .collect(toImmutableSet());
+        Map<String, Object> finalProperties = combineProperties(specifiedPropertyKeys, properties, inheritedProperties);
 
         ConnectorTableMetadata tableMetadata = new ConnectorTableMetadata(tableName.asSchemaTableName(), ImmutableList.copyOf(columns.values()), finalProperties, statement.getComment());
         try {
